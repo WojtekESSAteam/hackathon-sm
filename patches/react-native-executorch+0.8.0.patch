@@ -1,0 +1,21 @@
+diff --git a/node_modules/react-native-executorch/src/controllers/LLMController.ts b/node_modules/react-native-executorch/src/controllers/LLMController.ts
+index 7ce921f..ed3eb7c 100644
+--- a/node_modules/react-native-executorch/src/controllers/LLMController.ts
++++ b/node_modules/react-native-executorch/src/controllers/LLMController.ts
+@@ -186,6 +186,7 @@ export class LLMController {
+     }
+ 
+     // reset inner state when loading new configuration
++    this._messageHistory = this.chatConfig.initialMessageHistory;
+     this.messageHistoryCallback(this.chatConfig.initialMessageHistory);
+     this.isGeneratingCallback(false);
+   }
+@@ -423,7 +424,7 @@ export class LLMController {
+     // we delete referenced message and all messages after it
+     // so the model responses that used them are deleted as well
+     const newMessageHistory = this._messageHistory.slice(0, index);
+-
++    this._messageHistory = newMessageHistory;
+     this.messageHistoryCallback(newMessageHistory);
+   }
+ 

@@ -6,15 +6,26 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-
   Alert,
   Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import { File, Directory, Paths } from "expo-file-system";
-import { useOCR, OCR_ENGLISH } from "react-native-executorch";
+import { useOCR, OCR_POLISH } from "react-native-executorch";
 import { Link } from "expo-router";
+
+interface InvoiceField {
+  label: string;
+  value: string;
+}
+
+interface InvoiceSummary {
+  fields: InvoiceField[];
+  rawOcr: string;
+  status: "pending" | "processing" | "done" | "error";
+  error?: string;
+}
 
 interface Invoice {
   id: string;
@@ -22,6 +33,7 @@ interface Invoice {
   uri: string;
   addedAt: number;
   size?: number;
+  summary?: InvoiceSummary;
 }
 
 const invoicesDir = new Directory(Paths.document, "invoices");
@@ -47,11 +59,107 @@ async function saveIndex(invoices: Invoice[]) {
   invoicesIndexFile.write(JSON.stringify(invoices));
 }
 
+// Direct regex extraction — each field uses a self-contained pattern.
+// No section splitting needed. Each regex captures only its specific value.
+function extractInvoiceFields(ocrText: string): InvoiceField[] {
+  const fields: InvoiceField[] = [];
+  const t = ocrText.replace(/\s+/g, " ");
+
+  // Helper: first match or null
+  const grab = (re: RegExp) => {
+    const m = t.match(re);
+    return m ? m[1].trim() : null;
+  };
+
+  // Invoice number: FVI239/2024, FV/123, FV1-2024
+  const invNum = grab(/\b(FV[A-Z]?\d*[\/\-]\d{1,4}(?:[\/\-]\d{2,4})?)\b/i);
+  if (invNum) fields.push({ label: "Numer faktury", value: invNum });
+
+  // Data wystawienia: DD.MM.YYYY (only after "Data wystawienia")
+  const date = grab(/Data\s*wystawienia[:\s]*(\d{1,2}[\.\-\/]\d{1,2}[\.\-\/]\d{2,4})/i);
+  if (date) fields.push({ label: "Data wystawienia", value: date });
+
+  // Termin platnosci: DD.MM.YYYY
+  const termin = grab(/Termin\s*p[lł]atno[sś]ci[:\s]*(\d{1,2}[\.\-\/]\d{1,2}[\.\-\/]\d{2,4})/i);
+  if (termin) fields.push({ label: "Termin płatności", value: termin });
+
+  // Sprzedawca: everything between "Sprzedawca:" and "NIP" (strip FAKTURA VAT prefix)
+  const seller = grab(/Sprzedawca[:\s]+(?:FAKTURA\s*VAT\s*)?(.+?)(?=\s*NIP\b)/i);
+  if (seller) fields.push({ label: "Sprzedawca", value: maskSensitive(seller) });
+
+  // Nabywca: name between "Waluta: PLN" and the table header "Opis|Cena|Ilosc"
+  // OCR pattern: "Nabywca: Termin platnosci: ... Waluta: PLN <NAME> <address> Opis Ilosc..."
+  let buyer = grab(/Waluta[:\s]*PLN\s+(.+?)(?=\s*(?:Opis|Ilosc|Cena|Lp\b))/i);
+  // Fallback: if no Waluta section, get text between Nabywca and table header, stripping Termin/Waluta
+  if (!buyer) {
+    buyer = grab(/Nabywca[:\s]+(.+?)(?=\s*(?:Opis|Ilosc|Cena|Lp\b))/i);
+    if (buyer) {
+      buyer = buyer
+        .replace(/Termin\s*p[lł]atno[sś]ci[:\s]*\d{1,2}[\.\-\/]\d{1,2}[\.\-\/]\d{2,4}/i, "")
+        .replace(/Waluta[:\s]*[A-Z]{3}/i, "")
+        .trim();
+    }
+  }
+  if (buyer) fields.push({ label: "Nabywca", value: maskSensitive(buyer) });
+
+  // NIP(s)
+  const nipAll = [...t.matchAll(/NIP[:\s]*([\d\-\s]{10,13})/gi)];
+  nipAll.forEach((m, i) => {
+    fields.push({
+      label: i === 0 ? "NIP sprzedawcy" : "NIP nabywcy",
+      value: maskNip(m[1].trim()),
+    });
+  });
+
+  // Razem netto: number right after "Razem netto:"
+  const netto = grab(/Razem\s*netto[:\s]*([\d,\.]+)/i);
+  if (netto) fields.push({ label: "Razem netto", value: cleanAmount(netto) + " zł" });
+
+  // VAT: "VAT (89): 302.76 zI" — require parens with rate to skip "Cena netto VAT Netto Brutto" header
+  // OCR often renders "zł" as "zI" or "zl"
+  const vat = grab(/VAT\s*\(\d+%?\)[:\s]*([\d,\.]+)/i);
+  if (vat) fields.push({ label: "VAT", value: cleanAmount(vat) + " zł" });
+
+  // Do zapłaty / Do zaplaty: number
+  const payment = grab(/Do\s*zap[lł]aty[:\s]*([\d,\.]+)/i);
+  if (payment) fields.push({ label: "Do zapłaty", value: cleanAmount(payment) + " zł" });
+
+  if (fields.length === 0) {
+    fields.push({ label: "Status", value: "Nie rozpoznano pól faktury" });
+  }
+
+  return fields;
+}
+
+function cleanAmount(raw: string): string {
+  return raw.replace(/\s/g, "").replace(",", ".").trim();
+}
+
+function maskNip(nip: string): string {
+  const digits = nip.replace(/[\s\-]/g, "");
+  if (digits.length >= 10) {
+    return digits.slice(0, 3) + "****" + digits.slice(7);
+  }
+  return nip;
+}
+
+function maskSensitive(text: string): string {
+  return text
+    // Mask street addresses
+    .replace(/ul\.\s*[^\n,;]+/gi, "[adres ukryty]")
+    // Mask postal codes
+    .replace(/\d{2}-\d{3}\s+[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]+/g, "[miasto ukryte]");
+}
+
 export default function Index() {
   const [started, setStarted] = useState(false);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [picking, setPicking] = useState(false);
-  const ocr = useOCR({ model: OCR_ENGLISH, preventLoad: !started });
+  const [scanning, setScanning] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  // OCR for text extraction from images (Polish)
+  const ocr = useOCR({ model: OCR_POLISH, preventLoad: !started });
 
   useEffect(() => {
     ensureInvoicesDir();
@@ -62,7 +170,7 @@ export default function Index() {
     setPicking(true);
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: "application/pdf",
+        type: ["image/png", "image/jpeg", "image/webp"],
         multiple: true,
         copyToCacheDirectory: true,
       });
@@ -78,7 +186,8 @@ export default function Index() {
 
       for (const asset of result.assets) {
         const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-        const dest = new File(invoicesDir, `${id}.pdf`);
+        const ext = asset.name.split(".").pop() || "jpg";
+        const dest = new File(invoicesDir, `${id}.${ext}`);
         const src = new File(asset.uri);
         src.copy(dest);
         newInvoices.push({
@@ -123,6 +232,96 @@ export default function Index() {
     ]);
   };
 
+  const scanAndMask = useCallback(async () => {
+    if (!ocr.isReady) {
+      Alert.alert("OCR not ready", "Please wait for the OCR model to load.");
+      return;
+    }
+
+    const unscanned = invoices.filter((inv) => !inv.summary || inv.summary.status === "error");
+    if (unscanned.length === 0) {
+      Alert.alert("All done", "All invoices have already been scanned.");
+      return;
+    }
+
+    setScanning(true);
+
+    const updated = [...invoices];
+    for (const inv of unscanned) {
+      const idx = updated.findIndex((i) => i.id === inv.id);
+      updated[idx] = {
+        ...updated[idx],
+        summary: { fields: [], rawOcr: "", status: "processing" },
+      };
+      setInvoices([...updated]);
+
+      try {
+        // Step 1: OCR — extract raw text from invoice image
+        const ocrResult = await ocr.forward(inv.uri);
+
+        // Sort detections top-to-bottom, left-to-right for reading order
+        const sorted = [...ocrResult].sort((a, b) => {
+          const ay = Math.min(...a.bbox.map((p) => p.y));
+          const by = Math.min(...b.bbox.map((p) => p.y));
+          const lineThreshold = 15;
+          if (Math.abs(ay - by) < lineThreshold) {
+            const ax = Math.min(...a.bbox.map((p) => p.x));
+            const bx = Math.min(...b.bbox.map((p) => p.x));
+            return ax - bx;
+          }
+          return ay - by;
+        });
+
+        const rawOcrText = sorted.map((d) => d.text).join(" ");
+
+        if (!rawOcrText.trim()) {
+          updated[idx] = {
+            ...updated[idx],
+            summary: {
+              fields: [{ label: "Status", value: "Nie wykryto tekstu na obrazie" }],
+              rawOcr: "",
+              status: "done",
+            },
+          };
+          setInvoices([...updated]);
+          saveIndex([...updated]);
+          continue;
+        }
+
+        // Step 2: Extract fields using pattern matching (no LLM — no hallucination)
+        const fields = extractInvoiceFields(rawOcrText);
+
+        updated[idx] = {
+          ...updated[idx],
+          summary: {
+            fields,
+            rawOcr: rawOcrText,
+            status: "done",
+          },
+        };
+      } catch (err: any) {
+        updated[idx] = {
+          ...updated[idx],
+          summary: {
+            fields: [],
+            rawOcr: "",
+            status: "error",
+            error: err.message ?? "Scan failed",
+          },
+        };
+      }
+
+      setInvoices([...updated]);
+      saveIndex([...updated]);
+    }
+
+    setScanning(false);
+  }, [invoices, ocr]);
+
+  const toggleExpand = (id: string) => {
+    setExpandedId((prev) => (prev === id ? null : id));
+  };
+
   const formatSize = (bytes?: number) => {
     if (!bytes) return "";
     if (bytes < 1024) return `${bytes} B`;
@@ -135,8 +334,8 @@ export default function Index() {
     : ocr.error
       ? `Error: ${ocr.error.message}`
       : ocr.isReady
-        ? "Model loaded and ready!"
-        : `Downloading model... ${Math.round(ocr.downloadProgress * 100)}%`;
+        ? "OCR loaded and ready!"
+        : `Downloading OCR model... ${Math.round(ocr.downloadProgress * 100)}%`;
 
   return (
     <SafeAreaView style={styles.safeArea}>
@@ -156,9 +355,8 @@ export default function Index() {
                 <Text style={styles.cardTitle}>Tax Year 2025</Text>
               </View>
               <Text style={styles.cardDesc}>
-                Your assistant will use local models (Gemma 3 on-device) to
-                redact private data from invoices, and then
-                securely delegate calculations to the cloud (Gemini API).
+                Your assistant uses on-device OCR to read invoices and
+                extract key data — all processed locally, offline, and private.
               </Text>
 
               <Link href="/upload" asChild>
@@ -171,9 +369,8 @@ export default function Index() {
         </View>
 
         <View style={styles.scannerContainer}>
-          <Text style={styles.scannerTitle}>Scanner Module (OCR)</Text>
+          <Text style={styles.scannerTitle}>Invoice Scanner</Text>
 
-          {/* OCR status */}
           <Text style={styles.status}>{statusText}</Text>
 
           {!started && (
@@ -208,40 +405,118 @@ export default function Index() {
             )}
           </TouchableOpacity>
 
+          {/* Scan & Mask button */}
+          {invoices.length > 0 && ocr.isReady && (
+            <TouchableOpacity
+              style={[styles.scannerButton, styles.maskButton]}
+              onPress={scanAndMask}
+              disabled={scanning}
+            >
+              {scanning ? (
+                <View style={styles.scanningRow}>
+                  <ActivityIndicator color="#fff" size="small" />
+                  <Text style={styles.scannerButtonText}>  Scanning...</Text>
+                </View>
+              ) : (
+                <Text style={styles.scannerButtonText}>Scan & Mask Invoices</Text>
+              )}
+            </TouchableOpacity>
+          )}
+
           {/* Invoice list */}
           {invoices.length > 0 && (
             <View style={styles.listSection}>
               <Text style={styles.listTitle}>Your Invoices ({invoices.length})</Text>
               {invoices.map((inv) => (
-                <TouchableOpacity
-                  key={inv.id}
-                  style={styles.invoiceRow}
-                  onLongPress={() => confirmRemove(inv)}
-                >
-                  <View style={styles.pdfIcon}>
-                    <Text style={styles.pdfIconText}>PDF</Text>
-                  </View>
-                  <View style={styles.invoiceInfo}>
-                    <Text style={styles.invoiceName} numberOfLines={1}>
-                      {inv.name}
-                    </Text>
-                    <Text style={styles.invoiceMeta}>
-                      {new Date(inv.addedAt).toLocaleDateString("en-US")}
-                      {inv.size ? `  •  ${formatSize(inv.size)}` : ""}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
+                <View key={inv.id}>
+                  <TouchableOpacity
+                    style={[
+                      styles.invoiceRow,
+                      inv.summary?.status === "done" && styles.invoiceRowScanned,
+                    ]}
+                    onPress={() => inv.summary?.status === "done" && toggleExpand(inv.id)}
+                    onLongPress={() => confirmRemove(inv)}
+                  >
+                    <View style={[
+                      styles.iconBox,
+                      inv.summary?.status === "done" && styles.iconBoxScanned,
+                    ]}>
+                      <Text style={[
+                        styles.iconText,
+                        inv.summary?.status === "done" && styles.iconTextScanned,
+                      ]}>
+                        {inv.summary?.status === "processing" ? "..." :
+                         inv.summary?.status === "done" ? "OK" :
+                         inv.summary?.status === "error" ? "!" : "IMG"}
+                      </Text>
+                    </View>
+                    <View style={styles.invoiceInfo}>
+                      <Text style={styles.invoiceName} numberOfLines={1}>
+                        {inv.name}
+                      </Text>
+                      <Text style={styles.invoiceMeta}>
+                        {new Date(inv.addedAt).toLocaleDateString("en-US")}
+                        {inv.size ? `  •  ${formatSize(inv.size)}` : ""}
+                        {inv.summary?.status === "done"
+                          ? `  •  ${inv.summary.fields.length} fields`
+                          : ""}
+                        {inv.summary?.status === "processing" ? "  •  Scanning..." : ""}
+                        {inv.summary?.status === "error" ? "  •  Error" : ""}
+                      </Text>
+                    </View>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => confirmRemove(inv)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.deleteButtonText}>✕</Text>
+                    </TouchableOpacity>
+                    {inv.summary?.status === "done" && (
+                      <Text style={styles.expandArrow}>
+                        {expandedId === inv.id ? "▲" : "▼"}
+                      </Text>
+                    )}
+                  </TouchableOpacity>
+
+                  {/* Expanded: structured fields */}
+                  {expandedId === inv.id && inv.summary?.status === "done" && (
+                    <View style={styles.summaryBox}>
+                      <Text style={styles.summaryTitle}>Invoice Data (Masked)</Text>
+
+                      {inv.summary.fields.map((field, i) => (
+                        <View key={i} style={styles.fieldRow}>
+                          <Text style={styles.fieldLabel}>{field.label}</Text>
+                          <Text style={styles.fieldValue}>{field.value}</Text>
+                        </View>
+                      ))}
+
+                      {inv.summary.rawOcr ? (
+                        <View style={styles.rawOcrSection}>
+                          <Text style={styles.rawOcrTitle}>Raw OCR Output</Text>
+                          <Text style={styles.rawOcrText}>
+                            {maskSensitive(inv.summary.rawOcr)}
+                          </Text>
+                        </View>
+                      ) : null}
+                    </View>
+                  )}
+
+                  {expandedId === inv.id && inv.summary?.status === "error" && (
+                    <View style={[styles.summaryBox, styles.summaryBoxError]}>
+                      <Text style={styles.summaryErrorText}>{inv.summary.error}</Text>
+                    </View>
+                  )}
+                </View>
               ))}
             </View>
           )}
 
           {invoices.length === 0 && (
             <Text style={styles.emptyText}>
-              No invoices added yet. Tap above to scan PDF using OCR.
+              No invoices added yet. Tap above to add invoice images.
             </Text>
           )}
         </View>
-
       </ScrollView>
     </SafeAreaView>
   );
@@ -270,7 +545,7 @@ const styles = StyleSheet.create({
     letterSpacing: -1,
   },
   titleAccent: {
-    color: "#8B5CF6", // Purple neon accent for AI
+    color: "#8B5CF6",
   },
   subtitle: {
     fontSize: 16,
@@ -332,8 +607,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
   },
-
-  /* SCANNER STYLES */
   scannerContainer: {
     alignItems: "center",
     paddingHorizontal: 24,
@@ -405,7 +678,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#262626",
   },
-  pdfIcon: {
+  iconBox: {
     width: 42,
     height: 42,
     borderRadius: 8,
@@ -416,7 +689,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     marginRight: 16,
   },
-  pdfIconText: {
+  iconText: {
     color: "#F87171",
     fontSize: 12,
     fontWeight: "800",
@@ -433,6 +706,105 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#A1A1AA",
     marginTop: 2,
+  },
+  maskButton: {
+    backgroundColor: "#8B5CF6",
+    marginTop: 24,
+    marginBottom: 8,
+  },
+  scanningRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  invoiceRowScanned: {
+    borderColor: "rgba(139, 92, 246, 0.3)",
+  },
+  iconBoxScanned: {
+    backgroundColor: "rgba(139, 92, 246, 0.15)",
+    borderColor: "rgba(139, 92, 246, 0.3)",
+  },
+  iconTextScanned: {
+    color: "#A78BFA",
+  },
+  deleteButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+  },
+  deleteButtonText: {
+    color: "#F87171",
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  expandArrow: {
+    color: "#A1A1AA",
+    fontSize: 12,
+    marginLeft: 8,
+  },
+  summaryBox: {
+    backgroundColor: "#1C1C1E",
+    marginTop: -4,
+    marginBottom: 12,
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.2)",
+  },
+  summaryBoxError: {
+    borderColor: "rgba(239, 68, 68, 0.3)",
+  },
+  summaryTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#8B5CF6",
+    marginBottom: 12,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  fieldRow: {
+    flexDirection: "row",
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: "rgba(255, 255, 255, 0.06)",
+  },
+  fieldLabel: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#A1A1AA",
+    width: 130,
+  },
+  fieldValue: {
+    fontSize: 13,
+    color: "#E4E4E7",
+    flex: 1,
+  },
+  rawOcrSection: {
+    marginTop: 16,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255, 255, 255, 0.06)",
+  },
+  rawOcrTitle: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#71717A",
+    marginBottom: 6,
+    textTransform: "uppercase",
+    letterSpacing: 1,
+  },
+  rawOcrText: {
+    fontSize: 11,
+    color: "#71717A",
+    lineHeight: 16,
+    fontFamily: "monospace",
+  },
+  summaryErrorText: {
+    fontSize: 13,
+    color: "#F87171",
   },
   emptyText: {
     marginTop: 32,
