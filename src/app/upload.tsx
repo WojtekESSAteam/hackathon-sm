@@ -264,29 +264,42 @@ export default function Upload() {
             </View>
           ) : (
             invoices.map((inv) => (
-              <Pressable 
-                key={inv.id} 
-                style={styles.fileCard}
-                onLongPress={() => confirmRemove(inv.id, inv.name)}
-              >
-                <View style={styles.fileInfo}>
-                  <Text style={styles.fileName} numberOfLines={1}>{inv.name}</Text>
-                  <Text style={styles.fileSize}>
-                    {new Date(inv.addedAt).toLocaleDateString()} {inv.size ? `• ${formatSize(inv.size)}` : ""}
-                  </Text>
-                </View>
-                <View style={[
-                  styles.fileStatus,
-                  inv.summary?.status === "done" && styles.fileStatusScanned
-                ]}>
-                  <Text style={[
-                    styles.statusText,
-                    inv.summary?.status === "done" && styles.statusTextScanned
-                  ]}>
-                    {inv.summary?.status === "done" ? "Scanned" : "Ready"}
-                  </Text>
-                </View>
-              </Pressable>
+                <Pressable 
+                  key={inv.id} 
+                  style={styles.fileCard}
+                  onLongPress={() => confirmRemove(inv.id, inv.name)}
+                >
+                  <View style={styles.fileInfo}>
+                    <Text style={styles.fileName} numberOfLines={1}>{inv.name}</Text>
+                    <Text style={styles.fileSize}>
+                      {new Date(inv.addedAt).toLocaleDateString()} {inv.size ? `• ${formatSize(inv.size)}` : ""}
+                    </Text>
+                  </View>
+                  <View style={styles.rowActions}>
+                    <TouchableOpacity
+                      style={styles.chatRowBtn}
+                      onPress={() => {
+                        const dataStr = inv.summary?.fields
+                          ?.map((f: any) => `${f.label}: ${f.value}`)
+                          .join("\n") || "";
+                        router.push({
+                          pathname: "/chat",
+                          params: { invoiceData: dataStr, invoiceName: inv.name },
+                        } as any);
+                      }}
+                    >
+                      <Text style={styles.chatRowBtnText}>💬</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={() => confirmRemove(inv.id, inv.name)}
+                      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    >
+                      <Text style={styles.deleteButtonText}>✕</Text>
+                    </TouchableOpacity>
+                  </View>
+                </Pressable>
             ))
           )}
         </ScrollView>
@@ -403,10 +416,38 @@ const styles = StyleSheet.create({
   fileInfo: { flex: 1 },
   fileName: { color: "#FFFFFF", fontSize: 16, fontWeight: "600", marginBottom: 4 },
   fileSize: { color: "#A1A1AA", fontSize: 13 },
-  fileStatus: { backgroundColor: "rgba(139, 92, 246, 0.15)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: "rgba(139, 92, 246, 0.3)" },
-  fileStatusScanned: { backgroundColor: "rgba(16, 185, 129, 0.15)", borderColor: "rgba(16, 185, 129, 0.3)" },
-  statusText: { color: "#A78BFA", fontSize: 12, fontWeight: "600" },
-  statusTextScanned: { color: "#10B981" },
+  rowActions: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  chatRowBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(139, 92, 246, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.2)",
+  },
+  chatRowBtnText: {
+    fontSize: 14,
+  },
+  deleteButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+  },
+  deleteButtonText: {
+    color: "#F87171",
+    fontSize: 14,
+    fontWeight: "700",
+  },
   footer: { paddingTop: 16, paddingBottom: 32 },
   uploadButtonsRow: { flexDirection: "row", marginBottom: 16 },
   flex1: { flex: 1 },

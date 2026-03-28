@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import {
   Dimensions,
   Keyboard,
@@ -11,6 +11,8 @@ import {
   Text,
   TextInput,
   View,
+  Modal,
+  TouchableOpacity,
 } from "react-native";
 import Animated, {
   Easing,
@@ -22,6 +24,40 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+import { File, Directory, Paths } from "expo-file-system";
+
+interface InvoiceField {
+  label: string;
+  value: string;
+}
+
+interface InvoiceSummary {
+  fields: InvoiceField[];
+  rawOcr: string;
+  status: "pending" | "processing" | "done" | "error";
+  error?: string;
+}
+
+export interface Invoice {
+  id: string;
+  name: string;
+  uri: string;
+  addedAt: number;
+  size?: number;
+  summary?: InvoiceSummary;
+}
+
+const invoicesIndexFile = new File(Paths.document, "invoices_index.json");
+
+async function loadIndex(): Promise<Invoice[]> {
+  try {
+    if (!invoicesIndexFile.exists) return [];
+    const raw = await invoicesIndexFile.text();
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
 
 const { width, height } = Dimensions.get("window");
 const DRAWER_WIDTH = width * 0.75;
@@ -30,7 +66,7 @@ type Message = {
   id: string;
   text: string;
   sender: "user" | "ai";
-  attachedInvoice?: boolean;
+  attachedInvoices?: Invoice[];
 };
 
 const MOCK_HISTORY = [
@@ -43,7 +79,12 @@ const MOCK_HISTORY = [
 export default function Chat() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const invoiceData = params.invoiceData as string | undefined;
+  const invoiceDataParam = params.invoiceData;
+  const invoiceData = Array.isArray(invoiceDataParam) ? invoiceDataParam[0] : invoiceDataParam;
+  
+  const invoiceNameParam = params.invoiceName;
+  const invoiceName = Array.isArray(invoiceNameParam) ? invoiceNameParam[0] : invoiceNameParam;
+
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -51,13 +92,47 @@ export default function Chat() {
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "init",
-      text: "Hello! I am your AI tax assistant powered by Gemini. You can ask me anything about your finances or attach a sanitized invoice for analysis.",
+      text: "Hello! I am your AI tax assistant powered by Gemini. You can ask me anything about your finances or attach sanitized invoices for analysis.",
       sender: "ai",
     },
   ]);
-  const [isInvoiceAttached, setIsInvoiceAttached] = useState(false);
+  const [attachedInvoices, setAttachedInvoices] = useState<Invoice[]>([]);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+
+  // States for Invoice Modal
+  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [availableInvoices, setAvailableInvoices] = useState<Invoice[]>([]);
+  const [selectedInvoiceIds, setSelectedInvoiceIds] = useState<Set<string>>(new Set());
+
+  // Load invoices on mount
+  useEffect(() => {
+    loadIndex().then(setAvailableInvoices);
+  }, []);
+
+  // Auto-attach invoice if navigated from Dashboard/Upload
+  useEffect(() => {
+    if (invoiceData) {
+      const autoInvoice: Invoice = {
+        id: "auto-" + Date.now(),
+        name: invoiceName || "Załączona faktura z zewnątrz",
+        uri: "",
+        addedAt: Date.now(),
+        summary: {
+          fields: [],
+          rawOcr: invoiceData,
+          status: "done"
+        }
+      };
+      setAttachedInvoices((prev) => {
+        if (prev.length === 0) return [autoInvoice];
+        return prev;
+      });
+      if (!input) {
+        setInput(`Proszę o analizę faktury${invoiceName ? ` ${invoiceName}` : ""}.`);
+      }
+    }
+  }, [invoiceData, invoiceName]);
 
   const drawerTranslation = useSharedValue(-DRAWER_WIDTH);
   const backdropOpacity = useSharedValue(0);
@@ -78,18 +153,18 @@ export default function Chat() {
   };
 
   const handleSend = async () => {
-    if (!input.trim() && !isInvoiceAttached) return;
+    if (!input.trim() && attachedInvoices.length === 0) return;
 
     const newUserMsg: Message = {
       id: Date.now().toString(),
       text: input,
       sender: "user",
-      attachedInvoice: isInvoiceAttached,
+      attachedInvoices: [...attachedInvoices],
     };
 
     setMessages((prev) => [...prev, newUserMsg]);
     setInput("");
-    setIsInvoiceAttached(false);
+    setAttachedInvoices([]);
     setIsTyping(true);
 
     try {
@@ -105,8 +180,16 @@ export default function Chat() {
         .join("\n");
 
       let promptText = newUserMsg.text;
-      if (newUserMsg.attachedInvoice && invoiceData) {
-        promptText += `\n\n[ZANONIMIZOWANE DANE FAKTURY]:\n${invoiceData}\n\nProszę przeanalizować ten dokument w kontekście podatków.`;
+      if (newUserMsg.attachedInvoices && newUserMsg.attachedInvoices.length > 0) {
+        promptText += `\n\n[ZANONIMIZOWANE DANE FAKTUR]:\n`;
+        newUserMsg.attachedInvoices.forEach(inv => {
+          let dataStr = inv.summary?.rawOcr || "";
+          if (inv.summary?.fields && inv.summary.fields.length > 0) {
+            dataStr = inv.summary.fields.map(f => `${f.label}: ${f.value}`).join("\n");
+          }
+          promptText += `--- Faktura: ${inv.name} ---\n${dataStr}\n\n`;
+        });
+        promptText += "Proszę przeanalizować załączone dokumenty w kontekście podatków.";
       }
 
       const requestBody = {
@@ -226,14 +309,13 @@ export default function Chat() {
                   <Text style={styles.aiLabel}>✨ Gemini AI</Text>
                 )}
 
-                {msg.attachedInvoice && (
+                {msg.attachedInvoices && msg.attachedInvoices.length > 0 && (
                   <View style={styles.attachedInvoiceCard}>
                     <Text style={styles.attachedInvoiceHeader}>
-                      📄 Sanitized Package Attached
+                      📄 Załączono {msg.attachedInvoices.length} faktur(y)
                     </Text>
                     <Text style={styles.attachedInvoiceDetails}>
-                      Contains anonymized total revenue, expenses, and form
-                      type.
+                      Wysłano zanonimizowane dane z OCR do analizy...
                     </Text>
                   </View>
                 )}
@@ -241,17 +323,6 @@ export default function Chat() {
                 {msg.text ? (
                   <Text style={styles.messageText}>{msg.text}</Text>
                 ) : null}
-
-                {msg.id === "init" && invoiceData && !isInvoiceAttached && (
-                  <Pressable
-                    style={styles.actionButton}
-                    onPress={() => setIsInvoiceAttached(true)}
-                  >
-                    <Text style={styles.actionButtonText}>
-                      📎 Attach latest invoice data
-                    </Text>
-                  </Pressable>
-                )}
               </View>
             </View>
           ))}
@@ -270,33 +341,48 @@ export default function Chat() {
           )}
         </ScrollView>
 
-        {/* Document Status Label Above Input */}
-        {isInvoiceAttached && (
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>
-              ✓ Document attached and ready to analyze.
-            </Text>
-          </View>
+        {/* Custom Attachment Cards Above Input */}
+        {attachedInvoices.length > 0 && (
+          <ScrollView 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            style={{ maxHeight: 70, marginBottom: 8, marginHorizontal: 16 }}
+            contentContainerStyle={{ alignItems: 'center' }}
+          >
+            {attachedInvoices.map((inv) => (
+              <View key={inv.id} style={[styles.attachmentPreviewContainer, { marginHorizontal: 4, marginBottom: 0, padding: 8, paddingRight: 12 }]}>
+                <View style={[styles.attachmentPreviewIcon, { width: 32, height: 32, marginRight: 8 }]}>
+                  <Text style={[styles.attachmentPreviewIconText, { fontSize: 16 }]}>📄</Text>
+                </View>
+                <View style={styles.attachmentPreviewTextContainer}>
+                  <Text style={[styles.attachmentPreviewTitle, { fontSize: 12 }]} numberOfLines={1}>
+                    {inv.name}
+                  </Text>
+                </View>
+                <Pressable
+                  style={[styles.attachmentPreviewRemove, { width: 24, height: 24, marginLeft: 8 }]}
+                  onPress={() => {
+                    setAttachedInvoices(prev => prev.filter(i => i.id !== inv.id));
+                  }}
+                >
+                  <Text style={[styles.attachmentPreviewRemoveText, { fontSize: 12 }]}>✕</Text>
+                </Pressable>
+              </View>
+            ))}
+          </ScrollView>
         )}
 
         {/* Input Bar */}
         <View style={styles.inputContainer}>
-          {invoiceData && !isInvoiceAttached && (
-            <Pressable
-              style={styles.attachBtn}
-              onPress={() => setIsInvoiceAttached(true)}
-            >
-              <Text style={styles.attachBtnIcon}>+</Text>
-            </Pressable>
-          )}
-          {isInvoiceAttached && (
-            <Pressable
-              style={styles.trashBtn}
-              onPress={() => setIsInvoiceAttached(false)}
-            >
-              <Text style={styles.trashBtnIcon}>🗑️</Text>
-            </Pressable>
-          )}
+          <Pressable
+            style={styles.attachBtn}
+            onPress={() => {
+              setSelectedInvoiceIds(new Set(attachedInvoices.map(i => i.id)));
+              setIsModalVisible(true);
+            }}
+          >
+            <Text style={styles.attachBtnIcon}>📎</Text>
+          </Pressable>
 
           <TextInput
             style={styles.textInput}
@@ -311,9 +397,9 @@ export default function Chat() {
           <Pressable
             style={[
               styles.sendBtn,
-              !input.trim() && !isInvoiceAttached && styles.sendBtnDisabled,
+              !input.trim() && attachedInvoices.length === 0 && styles.sendBtnDisabled,
             ]}
-            disabled={!input.trim() && !isInvoiceAttached}
+            disabled={!input.trim() && attachedInvoices.length === 0}
             onPress={handleSend}
           >
             <Text style={styles.sendBtnIcon}>↑</Text>
@@ -359,6 +445,70 @@ export default function Chat() {
           ))}
         </ScrollView>
       </Animated.View>
+
+      {/* Invoice Selection Modal */}
+      <Modal visible={isModalVisible} animationType="slide" transparent>
+         <View style={styles.modalOverlay}>
+            <View style={styles.modalContent}>
+               <View style={styles.modalHeader}>
+                 <Text style={styles.modalTitle}>Wybierz faktury do analizy</Text>
+                 <Pressable onPress={() => setIsModalVisible(false)} style={styles.modalCloseBtn}>
+                   <Text style={styles.modalCloseText}>✕</Text>
+                 </Pressable>
+               </View>
+               <ScrollView style={styles.modalList}>
+                  {availableInvoices.length === 0 ? (
+                    <Text style={styles.modalEmptyText}>Brak wgranych faktur. Dodaj dokumenty na ekranie Upload.</Text>
+                  ) : (
+                    availableInvoices.map(inv => {
+                      const isSelected = selectedInvoiceIds.has(inv.id);
+                      return (
+                         <Pressable 
+                           key={inv.id} 
+                           style={[styles.modalInvoiceItem, isSelected && styles.modalInvoiceItemSelected]}
+                           onPress={() => {
+                              setSelectedInvoiceIds(prev => {
+                                 const next = new Set(prev);
+                                 if (next.has(inv.id)) next.delete(inv.id);
+                                 else next.add(inv.id);
+                                 return next;
+                              });
+                           }}
+                         >
+                           <View style={styles.modalInvoiceIcon}>
+                             <Text style={styles.modalInvoiceIconText}>📄</Text>
+                           </View>
+                           <View style={styles.modalInvoiceInfo}>
+                             <Text style={styles.modalInvoiceName} numberOfLines={1}>{inv.name}</Text>
+                             <Text style={styles.modalInvoiceStatus}>
+                                {inv.summary?.status === "done" ? "Skrót gotowy (OCR)" : "Brak pełnego skrótu OCR"}
+                             </Text>
+                           </View>
+                           <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
+                              {isSelected && <Text style={styles.checkboxCheck}>✓</Text>}
+                           </View>
+                         </Pressable>
+                      );
+                    })
+                  )}
+               </ScrollView>
+               <View style={styles.modalFooter}>
+                  <Pressable 
+                    style={styles.modalConfirmBtn}
+                    onPress={() => {
+                       const selected = availableInvoices.filter(i => selectedInvoiceIds.has(i.id));
+                       const autoAttached = attachedInvoices.filter(i => i.id.startsWith("auto-"));
+                       setAttachedInvoices([...autoAttached, ...selected]);
+                       setIsModalVisible(false);
+                    }}
+                  >
+                     <Text style={styles.modalConfirmText}>Dołącz faktury ({selectedInvoiceIds.size})</Text>
+                  </Pressable>
+               </View>
+            </View>
+         </View>
+      </Modal>
+
     </SafeAreaView>
   );
 }
@@ -407,22 +557,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     marginBottom: 6,
-  },
-
-  actionButton: {
-    marginTop: 12,
-    backgroundColor: "rgba(167, 139, 250, 0.15)",
-    paddingVertical: 10,
-    paddingHorizontal: 14,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "rgba(167, 139, 250, 0.3)",
-    alignSelf: "flex-start",
-  },
-  actionButtonText: {
-    color: "#A78BFA",
-    fontSize: 14,
-    fontWeight: "600",
   },
 
   typingBubble: { paddingVertical: 10, paddingHorizontal: 14 },
@@ -484,30 +618,56 @@ const styles = StyleSheet.create({
   },
   attachBtnIcon: { color: "#FFFFFF", fontSize: 20 },
 
-  statusBadge: {
-    backgroundColor: "rgba(34, 197, 94, 0.15)",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(34, 197, 94, 0.2)",
+  attachmentPreviewContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#171717",
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.4)",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
   },
-  statusBadgeText: {
-    color: "#4ADE80",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  trashBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(239, 68, 68, 0.1)",
+  attachmentPreviewIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: "rgba(139, 92, 246, 0.15)",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.3)",
+    marginRight: 12,
   },
-  trashBtnIcon: { fontSize: 18 },
+  attachmentPreviewIconText: { fontSize: 20 },
+  attachmentPreviewTextContainer: { flex: 1 },
+  attachmentPreviewTitle: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  attachmentPreviewSub: {
+    color: "#A78BFA",
+    fontSize: 12,
+  },
+  attachmentPreviewRemove: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+  },
+  attachmentPreviewRemoveText: {
+    color: "#F87171",
+    fontSize: 14,
+    fontWeight: "700",
+  },
 
   sendBtn: {
     width: 44,
@@ -580,4 +740,81 @@ const styles = StyleSheet.create({
   },
   historyItemTitle: { color: "#FFFFFF", fontSize: 15, marginBottom: 4 },
   historyItemDate: { color: "#71717A", fontSize: 12 },
+
+  /* Modal Styles */
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "flex-end",
+  },
+  modalContent: {
+    backgroundColor: "#171717",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    height: height * 0.7,
+    paddingBottom: 32,
+  },
+  modalHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    padding: 24,
+    borderBottomWidth: 1,
+    borderBottomColor: "#262626",
+  },
+  modalTitle: { color: "#FFFFFF", fontSize: 18, fontWeight: "700" },
+  modalCloseBtn: { padding: 4 },
+  modalCloseText: { color: "#A1A1AA", fontSize: 20 },
+  modalList: { flex: 1, padding: 16 },
+  modalEmptyText: { color: "#71717A", fontSize: 15, textAlign: "center", marginTop: 40 },
+  modalInvoiceItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#262626",
+    padding: 16,
+    borderRadius: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  modalInvoiceItemSelected: {
+    backgroundColor: "rgba(139, 92, 246, 0.15)",
+    borderColor: "rgba(139, 92, 246, 0.5)",
+  },
+  modalInvoiceIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: "#171717",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 12,
+  },
+  modalInvoiceIconText: { fontSize: 20 },
+  modalInvoiceInfo: { flex: 1 },
+  modalInvoiceName: { color: "#FFFFFF", fontSize: 15, fontWeight: "600", marginBottom: 4 },
+  modalInvoiceStatus: { color: "#A1A1AA", fontSize: 12 },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: "#52525B",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 12,
+  },
+  checkboxSelected: {
+    backgroundColor: "#8B5CF6",
+    borderColor: "#8B5CF6",
+  },
+  checkboxCheck: { color: "#FFFFFF", fontSize: 14, fontWeight: "800" },
+  modalFooter: { padding: 24, borderTopWidth: 1, borderTopColor: "#262626" },
+  modalConfirmBtn: {
+    backgroundColor: "#8B5CF6",
+    paddingVertical: 16,
+    borderRadius: 16,
+    alignItems: "center",
+  },
+  modalConfirmText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
 });
