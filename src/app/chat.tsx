@@ -84,7 +84,7 @@ export default function Chat() {
 
       const requestBody = {
         system_instruction: {
-          parts: [{ text: "Jesteś polskim asystentem podatkowym AI. Twoim zadaniem jest pomoc użytkownikom w analizie dokumentacji finansowych w oparciu o ich zanonimizowane dane z faktur. Odpowiadaj maksymalnie zwięźle i profesjonalnie w języku polskim." }]
+          parts: [{ text: "You are an AI tax assistant. Your task is to help users analyze their financial documentation based on anonymized invoice data. You MUST ALWAYS respond in English, regardless of the language the user writes in. Keep it concise and professional." }]
         },
         contents: [{
           role: "user",
