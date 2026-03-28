@@ -27,23 +27,23 @@ interface Invoice {
 const invoicesDir = new Directory(Paths.document, "invoices");
 const invoicesIndexFile = new File(Paths.document, "invoices_index.json");
 
-function ensureInvoicesDir() {
+async function ensureInvoicesDir() {
   if (!invoicesDir.exists) {
     invoicesDir.create();
   }
 }
 
-function loadIndex(): Invoice[] {
+async function loadIndex(): Promise<Invoice[]> {
   try {
     if (!invoicesIndexFile.exists) return [];
-    const raw = invoicesIndexFile.text();
+    const raw = await invoicesIndexFile.text();
     return JSON.parse(raw);
   } catch {
     return [];
   }
 }
 
-function saveIndex(invoices: Invoice[]) {
+async function saveIndex(invoices: Invoice[]) {
   invoicesIndexFile.write(JSON.stringify(invoices));
 }
 
@@ -55,7 +55,7 @@ export default function Index() {
 
   useEffect(() => {
     ensureInvoicesDir();
-    setInvoices(loadIndex());
+    loadIndex().then(setInvoices);
   }, []);
 
   const pickInvoices = useCallback(async () => {
@@ -73,7 +73,7 @@ export default function Index() {
       }
 
       ensureInvoicesDir();
-      const current = loadIndex();
+      const current = await loadIndex();
       const newInvoices: Invoice[] = [];
 
       for (const asset of result.assets) {
