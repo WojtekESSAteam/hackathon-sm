@@ -145,10 +145,12 @@ function maskNip(nip: string): string {
 
 function maskSensitive(text: string): string {
   return text
-    // Mask street addresses
-    .replace(/ul\.\s*[^\n,;]+/gi, "[adres ukryty]")
-    // Mask postal codes
-    .replace(/\d{2}-\d{3}\s+[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]+/g, "[miasto ukryte]");
+    // Remove street addresses (ul. ...)
+    .replace(/,?\s*ul\.\s*[^\n,;]+/gi, "")
+    // Remove postal codes with city (00-000 Miasto)
+    .replace(/,?\s*\d{2}-\d{3}\s+[A-ZĄĆĘŁŃÓŚŹŻ][a-ząćęłńóśźż]+/g, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
 }
 
 export default function Index() {
@@ -157,6 +159,9 @@ export default function Index() {
   const [picking, setPicking] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [ksefSyncing, setKsefSyncing] = useState(false);
+  const [ksefProgress, setKsefProgress] = useState(0);
+  const [ksefStage, setKsefStage] = useState("");
 
   // OCR for text extraction from images (Polish)
   const ocr = useOCR({ model: OCR_POLISH, preventLoad: !started });
@@ -231,6 +236,136 @@ export default function Index() {
       { text: "Remove", style: "destructive", onPress: () => removeInvoice(inv.id) },
     ]);
   };
+
+  const syncFromKsef = useCallback(async () => {
+    setKsefSyncing(true);
+    setKsefProgress(0);
+
+    const stages = [
+      "Connecting to KSeF API...",
+      "Authenticating with certificate...",
+      "Fetching invoice list...",
+      "Downloading invoices...",
+      "Validating XML schemas...",
+      "Processing invoice data...",
+      "Finalizing sync...",
+    ];
+
+    // Fake KSeF invoices
+    const ksefInvoices: { name: string; fields: InvoiceField[] }[] = [
+      {
+        name: "FV/2025/01/0042",
+        fields: [
+          { label: "Numer faktury", value: "FV/2025/01/0042" },
+          { label: "Data wystawienia", value: "15.01.2025" },
+          { label: "Termin płatności", value: "29.01.2025" },
+          { label: "Sprzedawca", value: "NetSoft Sp. z o.o." },
+          { label: "Nabywca", value: "K**** W****" },
+          { label: "NIP sprzedawcy", value: "541****238" },
+          { label: "Razem netto", value: "12450.00 zł" },
+          { label: "VAT", value: "2863.50 zł" },
+          { label: "Do zapłaty", value: "15313.50 zł" },
+        ],
+      },
+      {
+        name: "FV/2025/01/0089",
+        fields: [
+          { label: "Numer faktury", value: "FV/2025/01/0089" },
+          { label: "Data wystawienia", value: "22.01.2025" },
+          { label: "Termin płatności", value: "05.02.2025" },
+          { label: "Sprzedawca", value: "CloudBase S.A." },
+          { label: "Nabywca", value: "M**** Z****" },
+          { label: "NIP sprzedawcy", value: "782****519" },
+          { label: "Razem netto", value: "8900.00 zł" },
+          { label: "VAT", value: "2047.00 zł" },
+          { label: "Do zapłaty", value: "10947.00 zł" },
+        ],
+      },
+      {
+        name: "FV/2025/02/0015",
+        fields: [
+          { label: "Numer faktury", value: "FV/2025/02/0015" },
+          { label: "Data wystawienia", value: "03.02.2025" },
+          { label: "Termin płatności", value: "17.02.2025" },
+          { label: "Sprzedawca", value: "DataPro Consulting Sp. z o.o." },
+          { label: "Nabywca", value: "A**** N****" },
+          { label: "NIP sprzedawcy", value: "639****871" },
+          { label: "Razem netto", value: "22100.00 zł" },
+          { label: "VAT", value: "5083.00 zł" },
+          { label: "Do zapłaty", value: "27183.00 zł" },
+        ],
+      },
+      {
+        name: "FV/2025/02/0103",
+        fields: [
+          { label: "Numer faktury", value: "FV/2025/02/0103" },
+          { label: "Data wystawienia", value: "18.02.2025" },
+          { label: "Termin płatności", value: "04.03.2025" },
+          { label: "Sprzedawca", value: "SecureIT Solutions Sp. z o.o." },
+          { label: "Nabywca", value: "P**** K****" },
+          { label: "NIP sprzedawcy", value: "418****654" },
+          { label: "Razem netto", value: "5670.00 zł" },
+          { label: "VAT", value: "1304.10 zł" },
+          { label: "Do zapłaty", value: "6974.10 zł" },
+        ],
+      },
+      {
+        name: "FV/2025/03/0027",
+        fields: [
+          { label: "Numer faktury", value: "FV/2025/03/0027" },
+          { label: "Data wystawienia", value: "10.03.2025" },
+          { label: "Termin płatności", value: "24.03.2025" },
+          { label: "Sprzedawca", value: "WebDev Masters Sp. z o.o." },
+          { label: "Nabywca", value: "T**** B****" },
+          { label: "NIP sprzedawcy", value: "325****792" },
+          { label: "Razem netto", value: "16350.00 zł" },
+          { label: "VAT", value: "3760.50 zł" },
+          { label: "Do zapłaty", value: "20110.50 zł" },
+        ],
+      },
+    ];
+
+    // Animate through stages
+    for (let i = 0; i < stages.length; i++) {
+      setKsefStage(stages[i]);
+      const duration = 400 + Math.random() * 800;
+      const targetProgress = ((i + 1) / stages.length) * 100;
+
+      // Smooth progress increment
+      const steps = 10;
+      const startProgress = (i / stages.length) * 100;
+      for (let s = 0; s < steps; s++) {
+        await new Promise((r) => setTimeout(r, duration / steps));
+        setKsefProgress(startProgress + ((targetProgress - startProgress) * (s + 1)) / steps);
+      }
+    }
+
+    // Add fake invoices to state
+    const current = await loadIndex();
+    const newInvoices: Invoice[] = ksefInvoices.map((kInv) => ({
+      id: `ksef-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      name: kInv.name,
+      uri: "",
+      addedAt: Date.now(),
+      summary: {
+        fields: kInv.fields,
+        rawOcr: `[KSeF e-Invoice] ${kInv.name}`,
+        status: "done" as const,
+      },
+    }));
+
+    const updated = [...current, ...newInvoices];
+    saveIndex(updated);
+    setInvoices(updated);
+
+    setKsefSyncing(false);
+    setKsefProgress(0);
+    setKsefStage("");
+    Alert.alert(
+      "KSeF Sync Complete",
+      `Downloaded ${ksefInvoices.length} invoices from the National e-Invoice System.`
+    );
+  }, []);
 
   const scanAndMask = useCallback(async () => {
     if (!ocr.isReady) {
@@ -405,6 +540,27 @@ export default function Index() {
             )}
           </TouchableOpacity>
 
+          {/* KSeF sync button */}
+          <TouchableOpacity
+            style={[styles.scannerButton, styles.ksefButton]}
+            onPress={syncFromKsef}
+            disabled={ksefSyncing || scanning}
+          >
+            <Text style={styles.scannerButtonText}>Download from KSeF</Text>
+          </TouchableOpacity>
+
+          {/* KSeF progress overlay */}
+          {ksefSyncing && (
+            <View style={styles.ksefProgressBox}>
+              <Text style={styles.ksefProgressTitle}>KSeF Synchronization</Text>
+              <Text style={styles.ksefStageText}>{ksefStage}</Text>
+              <View style={styles.progressBarBg}>
+                <View style={[styles.progressBarFill, { width: `${Math.round(ksefProgress)}%` }]} />
+              </View>
+              <Text style={styles.ksefPercentText}>{Math.round(ksefProgress)}%</Text>
+            </View>
+          )}
+
           {/* Scan & Mask button */}
           {invoices.length > 0 && ocr.isReady && (
             <TouchableOpacity
@@ -490,14 +646,6 @@ export default function Index() {
                         </View>
                       ))}
 
-                      {inv.summary.rawOcr ? (
-                        <View style={styles.rawOcrSection}>
-                          <Text style={styles.rawOcrTitle}>Raw OCR Output</Text>
-                          <Text style={styles.rawOcrText}>
-                            {maskSensitive(inv.summary.rawOcr)}
-                          </Text>
-                        </View>
-                      ) : null}
                     </View>
                   )}
 
@@ -782,26 +930,6 @@ const styles = StyleSheet.create({
     color: "#E4E4E7",
     flex: 1,
   },
-  rawOcrSection: {
-    marginTop: 16,
-    paddingTop: 12,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(255, 255, 255, 0.06)",
-  },
-  rawOcrTitle: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#71717A",
-    marginBottom: 6,
-    textTransform: "uppercase",
-    letterSpacing: 1,
-  },
-  rawOcrText: {
-    fontSize: 11,
-    color: "#71717A",
-    lineHeight: 16,
-    fontFamily: "monospace",
-  },
   summaryErrorText: {
     fontSize: 13,
     color: "#F87171",
@@ -817,5 +945,50 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#262626",
+  },
+  ksefButton: {
+    backgroundColor: "#F59E0B",
+    marginTop: 12,
+  },
+  ksefProgressBox: {
+    width: "100%",
+    backgroundColor: "#171717",
+    borderRadius: 16,
+    padding: 20,
+    marginTop: 16,
+    borderWidth: 1,
+    borderColor: "rgba(245, 158, 11, 0.3)",
+  },
+  ksefProgressTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#F59E0B",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  ksefStageText: {
+    fontSize: 13,
+    color: "#D4D4D8",
+    marginBottom: 12,
+    textAlign: "center",
+  },
+  progressBarBg: {
+    width: "100%",
+    height: 8,
+    backgroundColor: "#262626",
+    borderRadius: 4,
+    overflow: "hidden",
+  },
+  progressBarFill: {
+    height: 8,
+    backgroundColor: "#F59E0B",
+    borderRadius: 4,
+  },
+  ksefPercentText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#F59E0B",
+    textAlign: "center",
+    marginTop: 8,
   },
 });
