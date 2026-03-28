@@ -54,7 +54,7 @@ export default function Chat() {
     });
   };
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!input.trim() && !isInvoiceAttached) return;
 
     const newUserMsg: Message = {
@@ -69,24 +69,57 @@ export default function Chat() {
     setIsInvoiceAttached(false);
     setIsTyping(true);
 
-    // Simulate AI response
-    setTimeout(() => {
-      let aiText = "I see what you mean.";
-      if (newUserMsg.attachedInvoice) {
-        aiText = "I've reviewed the sanitized invoice package. Calculating your tax deductibles and total PIT liability based on the updated data. As it's 2025, you fall into the 12% income bracket for this chunk.";
-      } else if (newUserMsg.text.toLowerCase().includes("tax")) {
-        aiText = "Based on Polish tax regulations, you can deduct up to 20% flat costs for this type of service, lowering your taxable base.";
-      } else {
-        aiText = "Is there any other financial document you'd like me to analyze?";
+    try {
+      const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
+      if (!apiKey) {
+        throw new Error("Brak klucza API. Upewnij się, że w .env.local jest zmienna EXPO_PUBLIC_GEMINI_API_KEY i zrestartuj serwer z wyczyszczeniem cache.");
       }
 
+      const historyContext = messages.map(m => `${m.sender === "ai" ? "Gemini" : "Użytkownik"}: ${m.text}`).join("\n");
+      
+      let promptText = newUserMsg.text;
+      if (newUserMsg.attachedInvoice && invoiceData) {
+        promptText += `\n\n[ZANONIMIZOWANE DANE FAKTURY]:\n${invoiceData}\n\nProszę przeanalizować ten dokument w kontekście podatków.`;
+      }
+
+      const requestBody = {
+        system_instruction: {
+          parts: [{ text: "Jesteś polskim asystentem podatkowym AI. Twoim zadaniem jest pomoc użytkownikom w analizie dokumentacji finansowych w oparciu o ich zanonimizowane dane z faktur. Odpowiadaj maksymalnie zwięźle i profesjonalnie w języku polskim." }]
+        },
+        contents: [{
+          role: "user",
+          parts: [{ text: `Historia czatu:\n${historyContext}\n\nUżytkownik: ${promptText}` }]
+        }]
+      };
+
+      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(requestBody)
+      });
+
+      if (!response.ok) {
+        throw new Error(`Błąd połączenia z API Gemini: ${response.status}`);
+      }
+
+      const data = await response.json();
+      const aiText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Brak odpowiedzi od modelu.";
+
       setMessages(prev => [...prev, {
-        id: (Date.now() + 1).toString(),
+        id: Date.now().toString(),
         text: aiText,
         sender: "ai",
       }]);
+    } catch (error: any) {
+      console.error("Błąd API Gemini:", error);
+      setMessages(prev => [...prev, {
+        id: Date.now().toString(),
+        text: `⚠️ Wystąpił błąd: ${error.message}`,
+        sender: "ai",
+      }]);
+    } finally {
       setIsTyping(false);
-    }, 1500);
+    }
   };
 
   const drawerAnimatedStyle = useAnimatedStyle(() => {
