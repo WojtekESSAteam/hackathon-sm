@@ -126,7 +126,7 @@ export default function Upload() {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        showPopup("warning", "Brak uprawnień", "Potrzebujemy dostępu do aparatu, aby zeskanować dokument.");
+        showPopup("warning", "Permission needed", "Camera access is required to scan documents.");
         return;
       }
 
@@ -162,8 +162,8 @@ export default function Upload() {
         // Fallback for Simulator
         showPopup(
           "confirm",
-          "Aparat niedostępny", 
-          "Symulator nie posiada kamery. Czy chcesz wybrać zdjęcie z galerii?",
+          "Camera unavailable",
+          "Simulator does not have a camera. Would you like to pick a photo from the gallery?",
           async () => {
             const libResult = await ImagePicker.launchImageLibraryAsync({
               quality: 0.8,
@@ -192,11 +192,11 @@ export default function Upload() {
               setInvoices(updated);
             }
           },
-          "Galeria",
-          "Anuluj"
+          "Gallery",
+          "Cancel"
         );
       } else {
-        showPopup("error", "Błąd", "Wystąpił problem podczas uruchamiania aparatu.");
+        showPopup("error", "Error", "There was a problem launching the camera.");
         console.error("Camera error: ", err);
       }
     }

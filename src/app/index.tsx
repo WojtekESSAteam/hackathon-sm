@@ -74,19 +74,19 @@ function extractInvoiceFields(ocrText: string): InvoiceField[] {
 
   // Invoice number: FVI239/2024, FV/123, FV1-2024
   const invNum = grab(/\b(FV[A-Z]?\d*[\/\-]\d{1,4}(?:[\/\-]\d{2,4})?)\b/i);
-  if (invNum) fields.push({ label: "Numer faktury", value: invNum });
+  if (invNum) fields.push({ label: "Invoice Number", value: invNum });
 
   // Data wystawienia: DD.MM.YYYY (only after "Data wystawienia")
   const date = grab(/Data\s*wystawienia[:\s]*(\d{1,2}[\.\-\/]\d{1,2}[\.\-\/]\d{2,4})/i);
-  if (date) fields.push({ label: "Data wystawienia", value: date });
+  if (date) fields.push({ label: "Issue Date", value: date });
 
   // Termin platnosci: DD.MM.YYYY
   const termin = grab(/Termin\s*p[lł]atno[sś]ci[:\s]*(\d{1,2}[\.\-\/]\d{1,2}[\.\-\/]\d{2,4})/i);
-  if (termin) fields.push({ label: "Termin płatności", value: termin });
+  if (termin) fields.push({ label: "Payment Due", value: termin });
 
   // Sprzedawca: everything between "Sprzedawca:" and "NIP" (strip FAKTURA VAT prefix)
   const seller = grab(/Sprzedawca[:\s]+(?:FAKTURA\s*VAT\s*)?(.+?)(?=\s*NIP\b)/i);
-  if (seller) fields.push({ label: "Sprzedawca", value: maskSensitive(seller) });
+  if (seller) fields.push({ label: "Seller", value: maskSensitive(seller) });
 
   // Nabywca: name between "Waluta: PLN" and the table header "Opis|Cena|Ilosc"
   // OCR pattern: "Nabywca: Termin platnosci: ... Waluta: PLN <NAME> <address> Opis Ilosc..."
@@ -101,7 +101,7 @@ function extractInvoiceFields(ocrText: string): InvoiceField[] {
         .trim();
     }
   }
-  if (buyer) fields.push({ label: "Nabywca", value: maskSensitive(buyer) });
+  if (buyer) fields.push({ label: "Buyer", value: maskSensitive(buyer) });
 
   // NIP(s)
   const nipAll = [...t.matchAll(/NIP[:\s]*([\d\-\s]{10,13})/gi)];
@@ -114,19 +114,19 @@ function extractInvoiceFields(ocrText: string): InvoiceField[] {
 
   // Razem netto: number right after "Razem netto:"
   const netto = grab(/Razem\s*netto[:\s]*([\d,\.]+)/i);
-  if (netto) fields.push({ label: "Razem netto", value: cleanAmount(netto) + " zł" });
+  if (netto) fields.push({ label: "Net Total", value: cleanAmount(netto) + " PLN" });
 
   // VAT: "VAT (89): 302.76 zI" — require parens with rate to skip "Cena netto VAT Netto Brutto" header
   // OCR often renders "zł" as "zI" or "zl"
   const vat = grab(/VAT\s*\(\d+%?\)[:\s]*([\d,\.]+)/i);
-  if (vat) fields.push({ label: "VAT", value: cleanAmount(vat) + " zł" });
+  if (vat) fields.push({ label: "VAT", value: cleanAmount(vat) + " PLN" });
 
   // Do zapłaty / Do zaplaty: number
   const payment = grab(/Do\s*zap[lł]aty[:\s]*([\d,\.]+)/i);
-  if (payment) fields.push({ label: "Do zapłaty", value: cleanAmount(payment) + " zł" });
+  if (payment) fields.push({ label: "Amount Due", value: cleanAmount(payment) + " PLN" });
 
   if (fields.length === 0) {
-    fields.push({ label: "Status", value: "Nie rozpoznano pól faktury" });
+    fields.push({ label: "Status", value: "No invoice fields recognized" });
   }
 
   return fields;
@@ -155,6 +155,7 @@ function maskSensitive(text: string): string {
 }
 
 export default function Index() {
+  const router = useRouter();
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [picking, setPicking] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -295,7 +296,7 @@ export default function Index() {
             return ay - by;
           });
           const rawOcrText = sorted.map((d) => d.text).join(" ");
-          const fields = rawOcrText.trim() ? extractInvoiceFields(rawOcrText) : [{ label: "Status", value: "Nie wykryto tekstu" }];
+          const fields = rawOcrText.trim() ? extractInvoiceFields(rawOcrText) : [{ label: "Status", value: "No text detected" }];
 
           const final = withProcessing.map((inv) =>
             inv.id === id ? { ...inv, summary: { fields, rawOcr: rawOcrText, status: "done" as const } } : inv
@@ -363,71 +364,71 @@ export default function Index() {
       {
         name: "FV/2025/01/0042",
         fields: [
-          { label: "Numer faktury", value: "FV/2025/01/0042" },
-          { label: "Data wystawienia", value: "15.01.2025" },
-          { label: "Termin płatności", value: "29.01.2025" },
-          { label: "Sprzedawca", value: "NetSoft Sp. z o.o." },
-          { label: "Nabywca", value: "K**** W****" },
-          { label: "NIP sprzedawcy", value: "541****238" },
-          { label: "Razem netto", value: "12450.00 zł" },
-          { label: "VAT", value: "2863.50 zł" },
-          { label: "Do zapłaty", value: "15313.50 zł" },
+          { label: "Invoice Number", value: "FV/2025/01/0042" },
+          { label: "Issue Date", value: "15.01.2025" },
+          { label: "Payment Due", value: "29.01.2025" },
+          { label: "Seller", value: "NetSoft Sp. z o.o." },
+          { label: "Buyer", value: "K**** W****" },
+          { label: "Seller Tax ID", value: "541****238" },
+          { label: "Net Total", value: "12450.00 PLN" },
+          { label: "VAT", value: "2863.50 PLN" },
+          { label: "Amount Due", value: "15313.50 PLN" },
         ],
       },
       {
         name: "FV/2025/01/0089",
         fields: [
-          { label: "Numer faktury", value: "FV/2025/01/0089" },
-          { label: "Data wystawienia", value: "22.01.2025" },
-          { label: "Termin płatności", value: "05.02.2025" },
-          { label: "Sprzedawca", value: "CloudBase S.A." },
-          { label: "Nabywca", value: "M**** Z****" },
-          { label: "NIP sprzedawcy", value: "782****519" },
-          { label: "Razem netto", value: "8900.00 zł" },
-          { label: "VAT", value: "2047.00 zł" },
-          { label: "Do zapłaty", value: "10947.00 zł" },
+          { label: "Invoice Number", value: "FV/2025/01/0089" },
+          { label: "Issue Date", value: "22.01.2025" },
+          { label: "Payment Due", value: "05.02.2025" },
+          { label: "Seller", value: "CloudBase S.A." },
+          { label: "Buyer", value: "M**** Z****" },
+          { label: "Seller Tax ID", value: "782****519" },
+          { label: "Net Total", value: "8900.00 PLN" },
+          { label: "VAT", value: "2047.00 PLN" },
+          { label: "Amount Due", value: "10947.00 PLN" },
         ],
       },
       {
         name: "FV/2025/02/0015",
         fields: [
-          { label: "Numer faktury", value: "FV/2025/02/0015" },
-          { label: "Data wystawienia", value: "03.02.2025" },
-          { label: "Termin płatności", value: "17.02.2025" },
-          { label: "Sprzedawca", value: "DataPro Consulting Sp. z o.o." },
-          { label: "Nabywca", value: "A**** N****" },
-          { label: "NIP sprzedawcy", value: "639****871" },
-          { label: "Razem netto", value: "22100.00 zł" },
-          { label: "VAT", value: "5083.00 zł" },
-          { label: "Do zapłaty", value: "27183.00 zł" },
+          { label: "Invoice Number", value: "FV/2025/02/0015" },
+          { label: "Issue Date", value: "03.02.2025" },
+          { label: "Payment Due", value: "17.02.2025" },
+          { label: "Seller", value: "DataPro Consulting Sp. z o.o." },
+          { label: "Buyer", value: "A**** N****" },
+          { label: "Seller Tax ID", value: "639****871" },
+          { label: "Net Total", value: "22100.00 PLN" },
+          { label: "VAT", value: "5083.00 PLN" },
+          { label: "Amount Due", value: "27183.00 PLN" },
         ],
       },
       {
         name: "FV/2025/02/0103",
         fields: [
-          { label: "Numer faktury", value: "FV/2025/02/0103" },
-          { label: "Data wystawienia", value: "18.02.2025" },
-          { label: "Termin płatności", value: "04.03.2025" },
-          { label: "Sprzedawca", value: "SecureIT Solutions Sp. z o.o." },
-          { label: "Nabywca", value: "P**** K****" },
-          { label: "NIP sprzedawcy", value: "418****654" },
-          { label: "Razem netto", value: "5670.00 zł" },
-          { label: "VAT", value: "1304.10 zł" },
-          { label: "Do zapłaty", value: "6974.10 zł" },
+          { label: "Invoice Number", value: "FV/2025/02/0103" },
+          { label: "Issue Date", value: "18.02.2025" },
+          { label: "Payment Due", value: "04.03.2025" },
+          { label: "Seller", value: "SecureIT Solutions Sp. z o.o." },
+          { label: "Buyer", value: "P**** K****" },
+          { label: "Seller Tax ID", value: "418****654" },
+          { label: "Net Total", value: "5670.00 PLN" },
+          { label: "VAT", value: "1304.10 PLN" },
+          { label: "Amount Due", value: "6974.10 PLN" },
         ],
       },
       {
         name: "FV/2025/03/0027",
         fields: [
-          { label: "Numer faktury", value: "FV/2025/03/0027" },
-          { label: "Data wystawienia", value: "10.03.2025" },
-          { label: "Termin płatności", value: "24.03.2025" },
-          { label: "Sprzedawca", value: "WebDev Masters Sp. z o.o." },
-          { label: "Nabywca", value: "T**** B****" },
-          { label: "NIP sprzedawcy", value: "325****792" },
-          { label: "Razem netto", value: "16350.00 zł" },
-          { label: "VAT", value: "3760.50 zł" },
-          { label: "Do zapłaty", value: "20110.50 zł" },
+          { label: "Invoice Number", value: "FV/2025/03/0027" },
+          { label: "Issue Date", value: "10.03.2025" },
+          { label: "Payment Due", value: "24.03.2025" },
+          { label: "Seller", value: "WebDev Masters Sp. z o.o." },
+          { label: "Buyer", value: "T**** B****" },
+          { label: "Seller Tax ID", value: "325****792" },
+          { label: "Net Total", value: "16350.00 PLN" },
+          { label: "VAT", value: "3760.50 PLN" },
+          { label: "Amount Due", value: "20110.50 PLN" },
         ],
       },
     ];
@@ -521,7 +522,7 @@ export default function Index() {
           updated[idx] = {
             ...updated[idx],
             summary: {
-              fields: [{ label: "Status", value: "Nie wykryto tekstu na obrazie" }],
+              fields: [{ label: "Status", value: "No text detected in image" }],
               rawOcr: "",
               status: "done",
             },
@@ -681,7 +682,7 @@ export default function Index() {
                           .join("\n");
                         router.push({
                           pathname: "/chat",
-                          params: { invoiceData: dataStr, invoiceName: inv.name },
+                          params: { invoiceData: dataStr, invoiceName: inv.name, invoiceId: inv.id },
                         } as any);
                       }}
                     >
@@ -756,19 +757,6 @@ export default function Index() {
         </TouchableOpacity>
 
         <TouchableOpacity
-          style={styles.bottomCenterBtn}
-          onPress={pickInvoices}
-          disabled={picking}
-          activeOpacity={0.8}
-        >
-          {picking ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.bottomCenterIcon}>+</Text>
-          )}
-        </TouchableOpacity>
-
-        <TouchableOpacity
           style={[styles.bottomSideIcon, styles.bottomSideIconMask]}
           onPress={scanAndMask}
           disabled={scanning || !ocr.isReady || invoices.length === 0}
@@ -780,6 +768,19 @@ export default function Index() {
             <View style={styles.maskIconOuter}>
               <View style={styles.maskIconInner} />
             </View>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.bottomCenterBtn}
+          onPress={pickInvoices}
+          disabled={picking}
+          activeOpacity={0.8}
+        >
+          {picking ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.bottomCenterIcon}>+</Text>
           )}
         </TouchableOpacity>
       </View>

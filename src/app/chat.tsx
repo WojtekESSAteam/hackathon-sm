@@ -84,6 +84,9 @@ export default function Chat() {
   const invoiceNameParam = params.invoiceName;
   const invoiceName = Array.isArray(invoiceNameParam) ? invoiceNameParam[0] : invoiceNameParam;
 
+  const invoiceIdParam = params.invoiceId;
+  const invoiceId = Array.isArray(invoiceIdParam) ? invoiceIdParam[0] : invoiceIdParam;
+
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -110,28 +113,37 @@ export default function Chat() {
   }, []);
 
   // Auto-attach invoice if navigated from Dashboard/Upload
+  const autoAttachDone = useRef(false);
   useEffect(() => {
-    if (invoiceData) {
-      const autoInvoice: Invoice = {
-        id: "auto-" + Date.now(),
-        name: invoiceName || "Załączona faktura z zewnątrz",
-        uri: "",
-        addedAt: Date.now(),
-        summary: {
-          fields: [],
-          rawOcr: invoiceData,
-          status: "done"
-        }
-      };
-      setAttachedInvoices((prev) => {
-        if (prev.length === 0) return [autoInvoice];
-        return prev;
-      });
-      if (!input) {
-        setInput(`Proszę o analizę faktury${invoiceName ? ` ${invoiceName}` : ""}.`);
+    if (!invoiceData || autoAttachDone.current) return;
+
+    // Wait for availableInvoices to load if we have an invoiceId
+    const matchedInvoice = invoiceId
+      ? availableInvoices.find(i => i.id === invoiceId)
+      : availableInvoices.find(i => i.name === invoiceName);
+
+    // If we expect a match but invoices haven't loaded yet, wait
+    if (invoiceId && availableInvoices.length === 0) return;
+
+    autoAttachDone.current = true;
+
+    const invoiceToAttach: Invoice = matchedInvoice || {
+      id: "auto-" + Date.now(),
+      name: invoiceName || "Attached invoice",
+      uri: "",
+      addedAt: Date.now(),
+      summary: {
+        fields: [],
+        rawOcr: invoiceData,
+        status: "done"
       }
+    };
+
+    setAttachedInvoices([invoiceToAttach]);
+    if (!input) {
+      setInput(`Please analyze the invoice${invoiceName ? ` ${invoiceName}` : ""}.`);
     }
-  }, [invoiceData, invoiceName]);
+  }, [invoiceData, invoiceName, invoiceId, availableInvoices]);
 
   const drawerTranslation = useSharedValue(-DRAWER_WIDTH);
   const backdropOpacity = useSharedValue(0);
@@ -163,32 +175,45 @@ export default function Chat() {
 
     setMessages((prev) => [...prev, newUserMsg]);
     setInput("");
-    setAttachedInvoices([]);
     setIsTyping(true);
 
     try {
       const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
       if (!apiKey) {
         throw new Error(
-          "Brak klucza API. Upewnij się, że w .env.local jest zmienna EXPO_PUBLIC_GEMINI_API_KEY i zrestartuj serwer z wyczyszczeniem cache.",
+          "Missing API key. Make sure EXPO_PUBLIC_GEMINI_API_KEY is set in .env.local and restart the server.",
         );
       }
 
       const historyContext = messages
-        .map((m) => `${m.sender === "ai" ? "Gemini" : "Użytkownik"}: ${m.text}`)
+        .map((m) => {
+          const role = m.sender === "ai" ? "Gemini" : "User";
+          let line = `${role}: ${m.text}`;
+          if (m.attachedInvoices && m.attachedInvoices.length > 0) {
+            line += `\n[Attached invoices]:\n`;
+            m.attachedInvoices.forEach(inv => {
+              let dataStr = inv.summary?.rawOcr || "";
+              if (inv.summary?.fields && inv.summary.fields.length > 0) {
+                dataStr = inv.summary.fields.map(f => `${f.label}: ${f.value}`).join("\n");
+              }
+              line += `--- ${inv.name} ---\n${dataStr}\n`;
+            });
+          }
+          return line;
+        })
         .join("\n");
 
       let promptText = newUserMsg.text;
       if (newUserMsg.attachedInvoices && newUserMsg.attachedInvoices.length > 0) {
-        promptText += `\n\n[ZANONIMIZOWANE DANE FAKTUR]:\n`;
+        promptText += `\n\n[ANONYMIZED INVOICE DATA]:\n`;
         newUserMsg.attachedInvoices.forEach(inv => {
           let dataStr = inv.summary?.rawOcr || "";
           if (inv.summary?.fields && inv.summary.fields.length > 0) {
             dataStr = inv.summary.fields.map(f => `${f.label}: ${f.value}`).join("\n");
           }
-          promptText += `--- Faktura: ${inv.name} ---\n${dataStr}\n\n`;
+          promptText += `--- Invoice: ${inv.name} ---\n${dataStr}\n\n`;
         });
-        promptText += "Proszę przeanalizować załączone dokumenty w kontekście podatków.";
+        promptText += "Please analyze the attached documents in the context of taxes.";
       }
 
       const requestBody = {
@@ -204,7 +229,7 @@ export default function Chat() {
             role: "user",
             parts: [
               {
-                text: `Historia czatu:\n${historyContext}\n\nUżytkownik: ${promptText}`,
+                text: `Chat history:\n${historyContext}\n\nUser: ${promptText}`,
               },
             ],
           },
@@ -221,13 +246,13 @@ export default function Chat() {
       );
 
       if (!response.ok) {
-        throw new Error(`Błąd połączenia z API Gemini: ${response.status}`);
+        throw new Error(`Gemini API error: ${response.status}`);
       }
 
       const data = await response.json();
       const aiText =
         data?.candidates?.[0]?.content?.parts?.[0]?.text ||
-        "Brak odpowiedzi od modelu.";
+        "No response from model.";
 
       setMessages((prev) => [
         ...prev,
@@ -238,12 +263,12 @@ export default function Chat() {
         },
       ]);
     } catch (error: any) {
-      console.error("Błąd API Gemini:", error);
+      console.error("Gemini API error:", error);
       setMessages((prev) => [
         ...prev,
         {
           id: Date.now().toString(),
-          text: `⚠️ Wystąpił błąd: ${error.message}`,
+          text: `⚠️ Error: ${error.message}`,
           sender: "ai",
         },
       ]);
@@ -281,7 +306,8 @@ export default function Chat() {
       {/* Main Chat Area */}
       <KeyboardAvoidingView
         style={styles.chatArea}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 52 : 0}
       >
         <ScrollView
           ref={scrollViewRef}
@@ -311,10 +337,10 @@ export default function Chat() {
                 {msg.attachedInvoices && msg.attachedInvoices.length > 0 && (
                   <View style={styles.attachedInvoiceCard}>
                     <Text style={styles.attachedInvoiceHeader}>
-                      📄 Załączono {msg.attachedInvoices.length} faktur(y)
+                      📄 {msg.attachedInvoices.length} invoice(s) attached
                     </Text>
                     <Text style={styles.attachedInvoiceDetails}>
-                      Wysłano zanonimizowane dane z OCR do analizy...
+                      Anonymized OCR data sent for analysis...
                     </Text>
                   </View>
                 )}
@@ -340,52 +366,32 @@ export default function Chat() {
           )}
         </ScrollView>
 
-        {/* Custom Attachment Cards Above Input */}
+        {/* Compact Attachment Bar Above Input */}
         {attachedInvoices.length > 0 && (
-          <View 
-            style={{ 
-              flexDirection: "row", 
-              flexWrap: "wrap", 
-              marginHorizontal: 16, 
-              marginBottom: 8,
-              gap: 8 
-            }}
-          >
-            {attachedInvoices.map((inv) => (
-              <View 
-                key={inv.id} 
-                style={[
-                  styles.attachmentPreviewContainer, 
-                  { 
-                    marginHorizontal: 0, 
-                    marginBottom: 0, 
-                    paddingVertical: 6, 
-                    paddingHorizontal: 10, 
-                    borderRadius: 20,
-                    maxWidth: "100%",
-                    alignSelf: "flex-start",
-                  }
-                ]}
-              >
-                <View style={[styles.attachmentPreviewIcon, { width: 24, height: 24, marginRight: 6, borderRadius: 6 }]}>
-                  <Text style={[styles.attachmentPreviewIconText, { fontSize: 12 }]}>📄</Text>
-                </View>
-                <View style={[styles.attachmentPreviewTextContainer, { flexShrink: 1 }]}>
-                  <Text style={[styles.attachmentPreviewTitle, { fontSize: 13, marginBottom: 0, lineHeight: 18 }]} numberOfLines={2}>
-                    {inv.name}
+          <View style={styles.attachmentBar}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ alignItems: "center", paddingHorizontal: 12 }}
+            >
+              {attachedInvoices.map((inv) => (
+                <View key={inv.id} style={styles.attachmentChip}>
+                  <Text style={styles.attachmentChipIcon}>📄</Text>
+                  <Text style={styles.attachmentChipText} numberOfLines={1}>
+                    {inv.name.length > 18 ? inv.name.slice(0, 18) + "…" : inv.name}
                   </Text>
+                  <Pressable
+                    hitSlop={8}
+                    onPress={() => setAttachedInvoices(prev => prev.filter(i => i.id !== inv.id))}
+                  >
+                    <Text style={styles.attachmentChipRemove}>✕</Text>
+                  </Pressable>
                 </View>
-                <Pressable
-                  style={[styles.attachmentPreviewRemove, { width: 20, height: 20, marginLeft: 8 }]}
-                  onPress={() => {
-                    setAttachedInvoices(prev => prev.filter(i => i.id !== inv.id));
-                  }}
-                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
-                >
-                  <Text style={[styles.attachmentPreviewRemoveText, { fontSize: 10 }]}>✕</Text>
-                </Pressable>
-              </View>
-            ))}
+              ))}
+            </ScrollView>
+            <View style={styles.attachmentBarBadge}>
+              <Text style={styles.attachmentBarBadgeText}>{attachedInvoices.length}</Text>
+            </View>
           </View>
         )}
 
@@ -394,7 +400,9 @@ export default function Chat() {
           <Pressable
             style={styles.attachBtn}
             onPress={() => {
-              setSelectedInvoiceIds(new Set(attachedInvoices.map(i => i.id)));
+              // Pre-check currently attached invoices in the modal
+              const currentIds = new Set(attachedInvoices.map(i => i.id));
+              setSelectedInvoiceIds(currentIds);
               setIsModalVisible(true);
             }}
           >
@@ -468,14 +476,14 @@ export default function Chat() {
          <View style={styles.modalOverlay}>
             <View style={styles.modalContent}>
                <View style={styles.modalHeader}>
-                 <Text style={styles.modalTitle}>Wybierz faktury do analizy</Text>
+                 <Text style={styles.modalTitle}>Select invoices to attach</Text>
                  <Pressable onPress={() => setIsModalVisible(false)} style={styles.modalCloseBtn}>
                    <Text style={styles.modalCloseText}>✕</Text>
                  </Pressable>
                </View>
                <ScrollView style={styles.modalList}>
                   {availableInvoices.length === 0 ? (
-                    <Text style={styles.modalEmptyText}>Brak wgranych faktur. Dodaj dokumenty na ekranie Upload.</Text>
+                    <Text style={styles.modalEmptyText}>No invoices uploaded. Add documents on the Upload screen.</Text>
                   ) : (
                     availableInvoices.map(inv => {
                       const isSelected = selectedInvoiceIds.has(inv.id);
@@ -498,7 +506,7 @@ export default function Chat() {
                            <View style={styles.modalInvoiceInfo}>
                              <Text style={styles.modalInvoiceName} numberOfLines={1}>{inv.name}</Text>
                              <Text style={styles.modalInvoiceStatus}>
-                                {inv.summary?.status === "done" ? "Skrót gotowy (OCR)" : "Brak pełnego skrótu OCR"}
+                                {inv.summary?.status === "done" ? "OCR data ready" : "No OCR data available"}
                              </Text>
                            </View>
                            <View style={[styles.checkbox, isSelected && styles.checkboxSelected]}>
@@ -514,12 +522,15 @@ export default function Chat() {
                     style={styles.modalConfirmBtn}
                     onPress={() => {
                        const selected = availableInvoices.filter(i => selectedInvoiceIds.has(i.id));
-                       const autoAttached = attachedInvoices.filter(i => i.id.startsWith("auto-"));
-                       setAttachedInvoices([...autoAttached, ...selected]);
+                       // Keep auto-attached invoices that aren't in the available list
+                       const autoOnly = attachedInvoices.filter(
+                         i => i.id.startsWith("auto-") && !availableInvoices.some(a => a.id === i.id)
+                       );
+                       setAttachedInvoices([...autoOnly, ...selected]);
                        setIsModalVisible(false);
                     }}
                   >
-                     <Text style={styles.modalConfirmText}>Dołącz faktury ({selectedInvoiceIds.size})</Text>
+                     <Text style={styles.modalConfirmText}>Attach invoices ({selectedInvoiceIds.size})</Text>
                   </Pressable>
                </View>
             </View>
@@ -635,56 +646,39 @@ const styles = StyleSheet.create({
   },
   attachBtnIcon: { color: "#FFFFFF", fontSize: 20 },
 
-  attachmentPreviewContainer: {
+  attachmentBar: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#171717",
-    marginHorizontal: 16,
-    marginBottom: 12,
-    padding: 12,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: "rgba(139, 92, 246, 0.4)",
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+    backgroundColor: "#111111",
+    borderTopWidth: 1,
+    borderTopColor: "#262626",
+    height: 48,
   },
-  attachmentPreviewIcon: {
-    width: 40,
-    height: 40,
-    borderRadius: 8,
-    backgroundColor: "rgba(139, 92, 246, 0.15)",
+  attachmentChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#1E1E2E",
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 14,
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.35)",
+    maxWidth: 200,
+  },
+  attachmentChipIcon: { fontSize: 13, marginRight: 5 },
+  attachmentChipText: { color: "#E4E4E7", fontSize: 12, fontWeight: "600", flexShrink: 1 },
+  attachmentChipRemove: { color: "#71717A", fontSize: 11, marginLeft: 6, fontWeight: "700" },
+  attachmentBarBadge: {
+    backgroundColor: "#8B5CF6",
+    width: 22,
+    height: 22,
+    borderRadius: 11,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
   },
-  attachmentPreviewIconText: { fontSize: 20 },
-  attachmentPreviewTextContainer: { flex: 1 },
-  attachmentPreviewTitle: {
-    color: "#FFFFFF",
-    fontSize: 14,
-    fontWeight: "700",
-    marginBottom: 2,
-  },
-  attachmentPreviewSub: {
-    color: "#A78BFA",
-    fontSize: 12,
-  },
-  attachmentPreviewRemove: {
-    width: 32,
-    height: 32,
-    borderRadius: 16,
-    backgroundColor: "rgba(239, 68, 68, 0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginLeft: 8,
-  },
-  attachmentPreviewRemoveText: {
-    color: "#F87171",
-    fontSize: 14,
-    fontWeight: "700",
-  },
+  attachmentBarBadgeText: { color: "#FFFFFF", fontSize: 11, fontWeight: "800" },
 
   sendBtn: {
     width: 44,
