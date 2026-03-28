@@ -177,6 +177,15 @@ export default function Chat() {
                 )}
 
                 {msg.text ? <Text style={styles.messageText}>{msg.text}</Text> : null}
+
+                {msg.id === "init" && invoiceData && !isInvoiceAttached && (
+                  <Pressable 
+                    style={styles.actionButton} 
+                    onPress={() => setIsInvoiceAttached(true)}
+                  >
+                    <Text style={styles.actionButtonText}>📎 Attach latest invoice data</Text>
+                  </Pressable>
+                )}
               </View>
             </View>
           ))}
@@ -300,6 +309,22 @@ const styles = StyleSheet.create({
   },
   messageText: { color: "#FFFFFF", fontSize: 15, lineHeight: 22 },
   aiLabel: { color: "#A78BFA", fontSize: 12, fontWeight: "700", marginBottom: 6 },
+  
+  actionButton: {
+    marginTop: 12,
+    backgroundColor: "rgba(167, 139, 250, 0.15)",
+    paddingVertical: 10,
+    paddingHorizontal: 14,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "rgba(167, 139, 250, 0.3)",
+    alignSelf: "flex-start",
+  },
+  actionButtonText: {
+    color: "#A78BFA",
+    fontSize: 14,
+    fontWeight: "600",
+  },
   
   typingBubble: { paddingVertical: 10, paddingHorizontal: 14 },
   typingText: { color: "#A1A1AA", fontSize: 14, fontStyle: "italic" },
