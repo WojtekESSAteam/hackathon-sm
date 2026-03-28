@@ -6,7 +6,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-  Alert,
+  Modal,
   Pressable,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -163,6 +163,30 @@ export default function Index() {
   const [ksefProgress, setKsefProgress] = useState(0);
   const [ksefStage, setKsefStage] = useState("");
 
+  // Custom popup state
+  const [popup, setPopup] = useState<{
+    visible: boolean;
+    icon: "success" | "error" | "warning" | "confirm";
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    onConfirm?: () => void;
+  }>({ visible: false, icon: "success", title: "", message: "" });
+
+  const showPopup = (
+    icon: "success" | "error" | "warning" | "confirm",
+    title: string,
+    message: string,
+    onConfirm?: () => void,
+    confirmLabel?: string,
+    cancelLabel?: string,
+  ) => {
+    setPopup({ visible: true, icon, title, message, onConfirm, confirmLabel, cancelLabel });
+  };
+
+  const closePopup = () => setPopup((p) => ({ ...p, visible: false }));
+
   // OCR for text extraction from images (Polish)
   const ocr = useOCR({ model: OCR_POLISH, preventLoad: !started });
 
@@ -208,7 +232,7 @@ export default function Index() {
       saveIndex(updated);
       setInvoices(updated);
     } catch (err: any) {
-      Alert.alert("Error", err.message ?? "Failed to pick documents");
+      showPopup("error", "Error", err.message ?? "Failed to pick documents");
     } finally {
       setPicking(false);
     }
@@ -231,10 +255,14 @@ export default function Index() {
   );
 
   const confirmRemove = (inv: Invoice) => {
-    Alert.alert("Remove invoice", `Remove "${inv.name}"?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Remove", style: "destructive", onPress: () => removeInvoice(inv.id) },
-    ]);
+    showPopup(
+      "confirm",
+      "Remove invoice",
+      `Remove "${inv.name}"?`,
+      () => removeInvoice(inv.id),
+      "Remove",
+      "Cancel",
+    );
   };
 
   const syncFromKsef = useCallback(async () => {
@@ -361,7 +389,8 @@ export default function Index() {
     setKsefSyncing(false);
     setKsefProgress(0);
     setKsefStage("");
-    Alert.alert(
+    showPopup(
+      "success",
       "KSeF Sync Complete",
       `Downloaded ${ksefInvoices.length} invoices from the National e-Invoice System.`
     );
@@ -369,13 +398,13 @@ export default function Index() {
 
   const scanAndMask = useCallback(async () => {
     if (!ocr.isReady) {
-      Alert.alert("OCR not ready", "Please wait for the OCR model to load.");
+      showPopup("warning", "OCR not ready", "Please wait for the OCR model to load.");
       return;
     }
 
     const unscanned = invoices.filter((inv) => !inv.summary || inv.summary.status === "error");
     if (unscanned.length === 0) {
-      Alert.alert("All done", "All invoices have already been scanned.");
+      showPopup("success", "All done", "All invoices have already been scanned.");
       return;
     }
 
@@ -666,6 +695,68 @@ export default function Index() {
           )}
         </View>
       </ScrollView>
+
+      {/* Custom popup modal */}
+      <Modal
+        visible={popup.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={closePopup}
+      >
+        <Pressable style={styles.modalOverlay} onPress={closePopup}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <View style={[
+              styles.modalIconCircle,
+              popup.icon === "success" && { backgroundColor: "rgba(16, 185, 129, 0.15)" },
+              popup.icon === "error" && { backgroundColor: "rgba(239, 68, 68, 0.15)" },
+              popup.icon === "warning" && { backgroundColor: "rgba(245, 158, 11, 0.15)" },
+              popup.icon === "confirm" && { backgroundColor: "rgba(139, 92, 246, 0.15)" },
+            ]}>
+              <Text style={[
+                styles.modalIconText,
+                popup.icon === "success" && { color: "#34D399" },
+                popup.icon === "error" && { color: "#F87171" },
+                popup.icon === "warning" && { color: "#FBBF24" },
+                popup.icon === "confirm" && { color: "#A78BFA" },
+              ]}>
+                {popup.icon === "success" ? "✓" :
+                 popup.icon === "error" ? "✕" :
+                 popup.icon === "warning" ? "!" : "?"}
+              </Text>
+            </View>
+            <Text style={styles.modalTitle}>{popup.title}</Text>
+            <Text style={styles.modalMessage}>{popup.message}</Text>
+            <View style={styles.modalButtons}>
+              {popup.onConfirm && popup.cancelLabel && (
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalBtnSecondary]}
+                  onPress={closePopup}
+                >
+                  <Text style={styles.modalBtnSecondaryText}>{popup.cancelLabel}</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[
+                  styles.modalBtn,
+                  styles.modalBtnPrimary,
+                  popup.icon === "error" && { backgroundColor: "#EF4444" },
+                  popup.icon === "warning" && { backgroundColor: "#F59E0B" },
+                  popup.icon === "confirm" && { backgroundColor: "#EF4444" },
+                  !popup.onConfirm && { flex: 1 },
+                ]}
+                onPress={() => {
+                  closePopup();
+                  popup.onConfirm?.();
+                }}
+              >
+                <Text style={styles.modalBtnPrimaryText}>
+                  {popup.confirmLabel || "OK"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -990,5 +1081,82 @@ const styles = StyleSheet.create({
     color: "#F59E0B",
     textAlign: "center",
     marginTop: 8,
+  },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 32,
+  },
+  modalCard: {
+    backgroundColor: "#1C1C1E",
+    borderRadius: 24,
+    padding: 28,
+    width: "100%",
+    maxWidth: 340,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#2C2C2E",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  modalIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  modalIconText: {
+    fontSize: 28,
+    fontWeight: "800",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  modalMessage: {
+    fontSize: 14,
+    color: "#A1A1AA",
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: "center",
+  },
+  modalBtnPrimary: {
+    backgroundColor: "#8B5CF6",
+  },
+  modalBtnPrimaryText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  modalBtnSecondary: {
+    backgroundColor: "#2C2C2E",
+    borderWidth: 1,
+    borderColor: "#3A3A3C",
+  },
+  modalBtnSecondaryText: {
+    color: "#A1A1AA",
+    fontSize: 15,
+    fontWeight: "600",
   },
 });
