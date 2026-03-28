@@ -13,7 +13,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import { File, Directory, Paths } from "expo-file-system";
 import { useOCR, OCR_POLISH } from "react-native-executorch";
-import { Link } from "expo-router";
+import { Link, useRouter } from "expo-router";
 
 interface InvoiceField {
   label: string;
@@ -154,6 +154,7 @@ function maskSensitive(text: string): string {
 }
 
 export default function Index() {
+  const router = useRouter();
   const [started, setStarted] = useState(false);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [picking, setPicking] = useState(false);
@@ -650,6 +651,21 @@ export default function Index() {
                       </Text>
                     </View>
                     <TouchableOpacity
+                      style={styles.chatRowBtn}
+                      onPress={() => {
+                        const dataStr = inv.summary?.fields
+                          .map((f) => `${f.label}: ${f.value}`)
+                          .join("\n");
+                        router.push({
+                          pathname: "/chat",
+                          params: { invoiceData: dataStr, invoiceName: inv.name },
+                        } as any);
+                      }}
+                    >
+                      <Text style={styles.chatRowBtnText}>💬</Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
                       style={styles.deleteButton}
                       onPress={() => confirmRemove(inv)}
                       hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
@@ -978,6 +994,20 @@ const styles = StyleSheet.create({
     color: "#F87171",
     fontSize: 14,
     fontWeight: "700",
+  },
+  chatRowBtn: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(139, 92, 246, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.2)",
+  },
+  chatRowBtnText: {
+    fontSize: 14,
   },
   expandArrow: {
     color: "#A1A1AA",

@@ -1,5 +1,5 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 import {
   Dimensions,
   Keyboard,
@@ -43,7 +43,12 @@ const MOCK_HISTORY = [
 export default function Chat() {
   const router = useRouter();
   const params = useLocalSearchParams();
-  const invoiceData = params.invoiceData as string | undefined;
+  const invoiceDataParam = params.invoiceData;
+  const invoiceData = Array.isArray(invoiceDataParam) ? invoiceDataParam[0] : invoiceDataParam;
+  
+  const invoiceNameParam = params.invoiceName;
+  const invoiceName = Array.isArray(invoiceNameParam) ? invoiceNameParam[0] : invoiceNameParam;
+
   const insets = useSafeAreaInsets();
   const scrollViewRef = useRef<ScrollView>(null);
 
@@ -58,6 +63,16 @@ export default function Chat() {
   const [isInvoiceAttached, setIsInvoiceAttached] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
+
+  // Auto-attach invoice if navigated from Dashboard/Upload
+  useEffect(() => {
+    if (invoiceData) {
+      setIsInvoiceAttached(true);
+      if (!input) {
+        setInput(`Proszę o analizę faktury${invoiceName ? ` ${invoiceName}` : ""}.`);
+      }
+    }
+  }, [invoiceData, invoiceName]);
 
   const drawerTranslation = useSharedValue(-DRAWER_WIDTH);
   const backdropOpacity = useSharedValue(0);
@@ -229,11 +244,10 @@ export default function Chat() {
                 {msg.attachedInvoice && (
                   <View style={styles.attachedInvoiceCard}>
                     <Text style={styles.attachedInvoiceHeader}>
-                      📄 Sanitized Package Attached
+                      📄 Faktura załączona
                     </Text>
                     <Text style={styles.attachedInvoiceDetails}>
-                      Contains anonymized total revenue, expenses, and form
-                      type.
+                      Wysłano zanonimizowane dane z OCR do analizy...
                     </Text>
                   </View>
                 )}
@@ -270,12 +284,27 @@ export default function Chat() {
           )}
         </ScrollView>
 
-        {/* Document Status Label Above Input */}
+        {/* Custom Attachment Card Above Input */}
         {isInvoiceAttached && (
-          <View style={styles.statusBadge}>
-            <Text style={styles.statusBadgeText}>
-              ✓ Document attached and ready to analyze.
-            </Text>
+          <View style={styles.attachmentPreviewContainer}>
+            <View style={styles.attachmentPreviewIcon}>
+              <Text style={styles.attachmentPreviewIconText}>📄</Text>
+            </View>
+            <View style={styles.attachmentPreviewTextContainer}>
+              <Text style={styles.attachmentPreviewTitle} numberOfLines={1}>
+                {invoiceName || "Załącznik do analizy"}
+              </Text>
+              <Text style={styles.attachmentPreviewSub}>Gotowe do wysłania (dane z OCR)</Text>
+            </View>
+            <Pressable
+              style={styles.attachmentPreviewRemove}
+              onPress={() => {
+                setIsInvoiceAttached(false);
+                setInput("");
+              }}
+            >
+              <Text style={styles.attachmentPreviewRemoveText}>✕</Text>
+            </Pressable>
           </View>
         )}
 
@@ -286,15 +315,7 @@ export default function Chat() {
               style={styles.attachBtn}
               onPress={() => setIsInvoiceAttached(true)}
             >
-              <Text style={styles.attachBtnIcon}>+</Text>
-            </Pressable>
-          )}
-          {isInvoiceAttached && (
-            <Pressable
-              style={styles.trashBtn}
-              onPress={() => setIsInvoiceAttached(false)}
-            >
-              <Text style={styles.trashBtnIcon}>🗑️</Text>
+              <Text style={styles.attachBtnIcon}>📎</Text>
             </Pressable>
           )}
 
@@ -484,30 +505,56 @@ const styles = StyleSheet.create({
   },
   attachBtnIcon: { color: "#FFFFFF", fontSize: 20 },
 
-  statusBadge: {
-    backgroundColor: "rgba(34, 197, 94, 0.15)",
-    paddingVertical: 8,
-    paddingHorizontal: 16,
-    borderTopWidth: 1,
-    borderTopColor: "rgba(34, 197, 94, 0.2)",
+  attachmentPreviewContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#171717",
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.4)",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
   },
-  statusBadgeText: {
-    color: "#4ADE80",
-    fontSize: 13,
-    fontWeight: "700",
-  },
-  trashBtn: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: "rgba(239, 68, 68, 0.1)",
+  attachmentPreviewIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 8,
+    backgroundColor: "rgba(139, 92, 246, 0.15)",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 8,
-    borderWidth: 1,
-    borderColor: "rgba(239, 68, 68, 0.3)",
+    marginRight: 12,
   },
-  trashBtnIcon: { fontSize: 18 },
+  attachmentPreviewIconText: { fontSize: 20 },
+  attachmentPreviewTextContainer: { flex: 1 },
+  attachmentPreviewTitle: {
+    color: "#FFFFFF",
+    fontSize: 14,
+    fontWeight: "700",
+    marginBottom: 2,
+  },
+  attachmentPreviewSub: {
+    color: "#A78BFA",
+    fontSize: 12,
+  },
+  attachmentPreviewRemove: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 8,
+  },
+  attachmentPreviewRemoveText: {
+    color: "#F87171",
+    fontSize: 14,
+    fontWeight: "700",
+  },
 
   sendBtn: {
     width: 44,
