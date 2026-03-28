@@ -163,7 +163,7 @@ export default function Index() {
 
               <Link href="/upload" asChild>
                 <Pressable style={styles.dashboardButton}>
-                  <Text style={styles.dashboardButtonText}>Wgraj Dokumenty (Nowy Ekran)</Text>
+                  <Text style={styles.dashboardButtonText}>Wgraj dokumenty</Text>
                 </Pressable>
               </Link>
             </View>
