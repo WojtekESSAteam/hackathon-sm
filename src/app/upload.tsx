@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, ScrollView, Alert } from "react-nati
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 
 export default function Upload() {
   const [files, setFiles] = useState<{ id: string; name: string; size: string }[]>([]);
@@ -27,6 +28,63 @@ export default function Upload() {
     } catch (err) {
       Alert.alert("Błąd", "Wystąpił problem podczas wybierania pliku.");
       console.error("DocumentPicker error: ", err);
+    }
+  };
+
+  const handleCamera = async () => {
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== 'granted') {
+        Alert.alert("Brak uprawnień", "Potrzebujemy dostępu do aparatu, aby zeskanować dokument.");
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.8,
+        allowsEditing: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const photo = result.assets[0];
+        const sizeInMb = photo.fileSize 
+          ? (photo.fileSize / (1024 * 1024)).toFixed(1) + " MB" 
+          : "0.5 MB";
+        
+        setFiles((prev) => [
+          ...prev,
+          { id: Date.now().toString(), name: `Scan_${prev.length + 1}.jpg`, size: sizeInMb },
+        ]);
+      }
+    } catch (err: any) {
+      if (err.message && err.message.includes("Camera not available")) {
+        // Fallback for Simulator
+        Alert.alert(
+          "Aparat niedostępny", 
+          "Symulator nie posiada kamery. Czy chcesz wybrać zdjęcie z galerii?",
+          [
+            { text: "Anuluj", style: "cancel" },
+            { 
+              text: "Galeria", 
+              onPress: async () => {
+                const libResult = await ImagePicker.launchImageLibraryAsync({
+                  quality: 0.8,
+                  allowsEditing: true,
+                });
+                if (!libResult.canceled && libResult.assets && libResult.assets.length > 0) {
+                  const photo = libResult.assets[0];
+                  setFiles((prev) => [
+                    ...prev,
+                    { id: Date.now().toString(), name: `Gallery_${prev.length + 1}.jpg`, size: "0.5 MB" },
+                  ]);
+                }
+              }
+            }
+          ]
+        );
+      } else {
+        Alert.alert("Błąd", "Wystąpił problem podczas uruchamiania aparatu.");
+        console.error("Camera error: ", err);
+      }
     }
   };
 
@@ -72,9 +130,14 @@ export default function Upload() {
         </ScrollView>
 
         <View style={styles.footer}>
-          <Pressable style={styles.uploadButton} onPress={handleUpload}>
-            <Text style={styles.uploadButtonText}>+ Add another PDF</Text>
-          </Pressable>
+          <View style={styles.uploadButtonsRow}>
+            <Pressable style={[styles.uploadButton, styles.flex1, styles.marginRight8]} onPress={handleUpload}>
+              <Text style={styles.uploadButtonText}>+ Add PDF</Text>
+            </Pressable>
+            <Pressable style={[styles.uploadButton, styles.flex1]} onPress={handleCamera}>
+              <Text style={styles.uploadButtonText}>📷 Scan Doc</Text>
+            </Pressable>
+          </View>
 
           <Pressable
             style={[styles.processButton, files.length === 0 && styles.processButtonDisabled]}
@@ -110,7 +173,10 @@ const styles = StyleSheet.create({
   fileStatus: { backgroundColor: "rgba(139, 92, 246, 0.15)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: "rgba(139, 92, 246, 0.3)" },
   statusText: { color: "#A78BFA", fontSize: 12, fontWeight: "600" },
   footer: { paddingTop: 16, paddingBottom: 32 },
-  uploadButton: { backgroundColor: "#262626", borderRadius: 16, paddingVertical: 16, alignItems: "center", marginBottom: 16 },
+  uploadButtonsRow: { flexDirection: "row", marginBottom: 16 },
+  flex1: { flex: 1 },
+  marginRight8: { marginRight: 8 },
+  uploadButton: { backgroundColor: "#262626", borderRadius: 16, paddingVertical: 16, alignItems: "center" },
   uploadButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "600" },
   processButton: { backgroundColor: "#8B5CF6", borderRadius: 16, paddingVertical: 16, alignItems: "center", shadowColor: "#8B5CF6", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 10, elevation: 5 },
   processButtonDisabled: { backgroundColor: "#3F3F46", shadowOpacity: 0, elevation: 0 },

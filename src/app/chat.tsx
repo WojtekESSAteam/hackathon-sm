@@ -1,8 +1,27 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useRef, useState } from "react";
-import { Dimensions, Keyboard, KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
-import Animated, { Easing, useAnimatedStyle, useSharedValue, withTiming } from "react-native-reanimated";
-import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
+import {
+  Dimensions,
+  Keyboard,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import Animated, {
+  Easing,
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from "react-native-reanimated";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 const { width, height } = Dimensions.get("window");
 const DRAWER_WIDTH = width * 0.75;
@@ -30,7 +49,11 @@ export default function Chat() {
 
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Message[]>([
-    { id: "init", text: "Hello! I am your AI tax assistant powered by Gemini. You can ask me anything about your finances or attach a sanitized invoice for analysis.", sender: "ai" }
+    {
+      id: "init",
+      text: "Hello! I am your AI tax assistant powered by Gemini. You can ask me anything about your finances or attach a sanitized invoice for analysis.",
+      sender: "ai",
+    },
   ]);
   const [isInvoiceAttached, setIsInvoiceAttached] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -43,14 +66,14 @@ export default function Chat() {
     Keyboard.dismiss();
     const willOpen = drawerTranslation.value !== 0;
     setIsDrawerOpen(willOpen);
-    
-    drawerTranslation.value = withTiming(willOpen ? 0 : -DRAWER_WIDTH, { 
-      duration: 300, 
-      easing: Easing.bezier(0.25, 0.1, 0.25, 1) 
+
+    drawerTranslation.value = withTiming(willOpen ? 0 : -DRAWER_WIDTH, {
+      duration: 300,
+      easing: Easing.bezier(0.25, 0.1, 0.25, 1),
     });
-    
+
     backdropOpacity.value = withTiming(willOpen ? 0.5 : 0, {
-      duration: 300
+      duration: 300,
     });
   };
 
@@ -64,7 +87,7 @@ export default function Chat() {
       attachedInvoice: isInvoiceAttached,
     };
 
-    setMessages(prev => [...prev, newUserMsg]);
+    setMessages((prev) => [...prev, newUserMsg]);
     setInput("");
     setIsInvoiceAttached(false);
     setIsTyping(true);
@@ -72,11 +95,15 @@ export default function Chat() {
     try {
       const apiKey = process.env.EXPO_PUBLIC_GEMINI_API_KEY;
       if (!apiKey) {
-        throw new Error("Brak klucza API. Upewnij się, że w .env.local jest zmienna EXPO_PUBLIC_GEMINI_API_KEY i zrestartuj serwer z wyczyszczeniem cache.");
+        throw new Error(
+          "Brak klucza API. Upewnij się, że w .env.local jest zmienna EXPO_PUBLIC_GEMINI_API_KEY i zrestartuj serwer z wyczyszczeniem cache.",
+        );
       }
 
-      const historyContext = messages.map(m => `${m.sender === "ai" ? "Gemini" : "Użytkownik"}: ${m.text}`).join("\n");
-      
+      const historyContext = messages
+        .map((m) => `${m.sender === "ai" ? "Gemini" : "Użytkownik"}: ${m.text}`)
+        .join("\n");
+
       let promptText = newUserMsg.text;
       if (newUserMsg.attachedInvoice && invoiceData) {
         promptText += `\n\n[ZANONIMIZOWANE DANE FAKTURY]:\n${invoiceData}\n\nProszę przeanalizować ten dokument w kontekście podatków.`;
@@ -84,39 +111,60 @@ export default function Chat() {
 
       const requestBody = {
         system_instruction: {
-          parts: [{ text: "You are an AI tax assistant. Your task is to help users analyze their financial documentation based on anonymized invoice data. You MUST ALWAYS respond in English, regardless of the language the user writes in. Keep it concise and professional." }]
+          parts: [
+            {
+              text: "You are an AI tax assistant. Your task is to help users analyze their financial documentation based on anonymized invoice data. You MUST ALWAYS respond in English, regardless of the language the user writes in. Keep it concise and professional.",
+            },
+          ],
         },
-        contents: [{
-          role: "user",
-          parts: [{ text: `Historia czatu:\n${historyContext}\n\nUżytkownik: ${promptText}` }]
-        }]
+        contents: [
+          {
+            role: "user",
+            parts: [
+              {
+                text: `Historia czatu:\n${historyContext}\n\nUżytkownik: ${promptText}`,
+              },
+            ],
+          },
+        ],
       };
 
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(requestBody)
-      });
+      const response = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(requestBody),
+        },
+      );
 
       if (!response.ok) {
         throw new Error(`Błąd połączenia z API Gemini: ${response.status}`);
       }
 
       const data = await response.json();
-      const aiText = data?.candidates?.[0]?.content?.parts?.[0]?.text || "Brak odpowiedzi od modelu.";
+      const aiText =
+        data?.candidates?.[0]?.content?.parts?.[0]?.text ||
+        "Brak odpowiedzi od modelu.";
 
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        text: aiText,
-        sender: "ai",
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          text: aiText,
+          sender: "ai",
+        },
+      ]);
     } catch (error: any) {
       console.error("Błąd API Gemini:", error);
-      setMessages(prev => [...prev, {
-        id: Date.now().toString(),
-        text: `⚠️ Wystąpił błąd: ${error.message}`,
-        sender: "ai",
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          id: Date.now().toString(),
+          text: `⚠️ Wystąpił błąd: ${error.message}`,
+          sender: "ai",
+        },
+      ]);
     } finally {
       setIsTyping(false);
     }
@@ -149,41 +197,59 @@ export default function Chat() {
       </View>
 
       {/* Main Chat Area */}
-      <KeyboardAvoidingView 
-        style={styles.chatArea} 
+      <KeyboardAvoidingView
+        style={styles.chatArea}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <ScrollView 
+        <ScrollView
           ref={scrollViewRef}
           contentContainerStyle={styles.scrollContent}
-          onContentSizeChange={() => scrollViewRef.current?.scrollToEnd({ animated: true })}
+          onContentSizeChange={() =>
+            scrollViewRef.current?.scrollToEnd({ animated: true })
+          }
         >
           {messages.map((msg) => (
-            <View key={msg.id} style={[
-              styles.messageWrapper, 
-              msg.sender === "user" ? styles.msgRight : styles.msgLeft
-            ]}>
-              <View style={[
-                styles.messageBubble, 
-                msg.sender === "user" ? styles.bubbleUser : styles.bubbleAi
-              ]}>
-                {msg.sender === "ai" && <Text style={styles.aiLabel}>✨ Gemini AI</Text>}
-                
+            <View
+              key={msg.id}
+              style={[
+                styles.messageWrapper,
+                msg.sender === "user" ? styles.msgRight : styles.msgLeft,
+              ]}
+            >
+              <View
+                style={[
+                  styles.messageBubble,
+                  msg.sender === "user" ? styles.bubbleUser : styles.bubbleAi,
+                ]}
+              >
+                {msg.sender === "ai" && (
+                  <Text style={styles.aiLabel}>✨ Gemini AI</Text>
+                )}
+
                 {msg.attachedInvoice && (
                   <View style={styles.attachedInvoiceCard}>
-                    <Text style={styles.attachedInvoiceHeader}>📄 Sanitized Package Attached</Text>
-                    <Text style={styles.attachedInvoiceDetails}>Contains anonymized total revenue, expenses, and form type.</Text>
+                    <Text style={styles.attachedInvoiceHeader}>
+                      📄 Sanitized Package Attached
+                    </Text>
+                    <Text style={styles.attachedInvoiceDetails}>
+                      Contains anonymized total revenue, expenses, and form
+                      type.
+                    </Text>
                   </View>
                 )}
 
-                {msg.text ? <Text style={styles.messageText}>{msg.text}</Text> : null}
+                {msg.text ? (
+                  <Text style={styles.messageText}>{msg.text}</Text>
+                ) : null}
 
                 {msg.id === "init" && invoiceData && !isInvoiceAttached && (
-                  <Pressable 
-                    style={styles.actionButton} 
+                  <Pressable
+                    style={styles.actionButton}
                     onPress={() => setIsInvoiceAttached(true)}
                   >
-                    <Text style={styles.actionButtonText}>📎 Attach latest invoice data</Text>
+                    <Text style={styles.actionButtonText}>
+                      📎 Attach latest invoice data
+                    </Text>
                   </Pressable>
                 )}
               </View>
@@ -191,44 +257,62 @@ export default function Chat() {
           ))}
           {isTyping && (
             <View style={[styles.messageWrapper, styles.msgLeft]}>
-              <View style={[styles.messageBubble, styles.bubbleAi, styles.typingBubble]}>
+              <View
+                style={[
+                  styles.messageBubble,
+                  styles.bubbleAi,
+                  styles.typingBubble,
+                ]}
+              >
                 <Text style={styles.typingText}>Gemini is typing...</Text>
               </View>
             </View>
           )}
         </ScrollView>
 
+        {/* Document Status Label Above Input */}
+        {isInvoiceAttached && (
+          <View style={styles.statusBadge}>
+            <Text style={styles.statusBadgeText}>
+              ✓ Document attached and ready to analyze.
+            </Text>
+          </View>
+        )}
+
         {/* Input Bar */}
         <View style={styles.inputContainer}>
           {invoiceData && !isInvoiceAttached && (
-            <Pressable 
-              style={styles.attachBtn} 
+            <Pressable
+              style={styles.attachBtn}
               onPress={() => setIsInvoiceAttached(true)}
             >
               <Text style={styles.attachBtnIcon}>+</Text>
             </Pressable>
           )}
           {isInvoiceAttached && (
-            <Pressable 
-              style={[styles.attachBtn, styles.attachBtnActive]} 
+            <Pressable
+              style={styles.trashBtn}
               onPress={() => setIsInvoiceAttached(false)}
             >
-              <Text style={styles.attachBtnIcon}>📄</Text>
+              <Text style={styles.trashBtnIcon}>🗑️</Text>
             </Pressable>
           )}
 
           <TextInput
             style={styles.textInput}
-            placeholder="Kopia faktury załączona. Napisz coś..."
+            placeholder="Write something..."
             placeholderTextColor="#71717A"
             value={input}
             onChangeText={setInput}
             multiline
             maxLength={500}
           />
-          
-          <Pressable 
-            style={[styles.sendBtn, (!input.trim() && !isInvoiceAttached) && styles.sendBtnDisabled]} 
+
+          <Pressable
+            style={[
+              styles.sendBtn,
+              !input.trim() && !isInvoiceAttached && styles.sendBtnDisabled,
+            ]}
             disabled={!input.trim() && !isInvoiceAttached}
             onPress={handleSend}
           >
@@ -243,15 +327,23 @@ export default function Chat() {
       </Animated.View>
 
       {/* Slide Menu (Chat History) */}
-      <Animated.View style={[styles.drawer, drawerAnimatedStyle, { paddingTop: insets.top }]}>
+      <Animated.View
+        style={[styles.drawer, drawerAnimatedStyle, { paddingTop: insets.top }]}
+      >
         <View style={styles.drawerHeader}>
           <Text style={styles.drawerTitle}>Chat History</Text>
           <Pressable onPress={toggleDrawer} style={styles.closeDrawerBtn}>
             <Text style={styles.closeDrawerText}>✕</Text>
           </Pressable>
         </View>
-        
-        <Pressable style={styles.newChatBtn} onPress={() => { setMessages([]); toggleDrawer(); }}>
+
+        <Pressable
+          style={styles.newChatBtn}
+          onPress={() => {
+            setMessages([]);
+            toggleDrawer();
+          }}
+        >
           <Text style={styles.newChatBtnText}>+ New Chat</Text>
         </Pressable>
 
@@ -259,7 +351,9 @@ export default function Chat() {
           <Text style={styles.historySection}>Recent</Text>
           {MOCK_HISTORY.map((item) => (
             <Pressable key={item.id} style={styles.historyItem}>
-              <Text style={styles.historyItemTitle} numberOfLines={1}>{item.title}</Text>
+              <Text style={styles.historyItemTitle} numberOfLines={1}>
+                {item.title}
+              </Text>
               <Text style={styles.historyItemDate}>{item.date}</Text>
             </Pressable>
           ))}
@@ -284,14 +378,14 @@ const styles = StyleSheet.create({
   iconBtn: { padding: 8, borderRadius: 8, backgroundColor: "#171717" },
   iconText: { color: "#FFFFFF", fontSize: 18 },
   iconTextX: { color: "#A1A1AA", fontSize: 16 },
-  
+
   chatArea: { flex: 1 },
   scrollContent: { padding: 16, paddingBottom: 24 },
-  
+
   messageWrapper: { marginBottom: 16, flexDirection: "row" },
   msgLeft: { justifyContent: "flex-start" },
   msgRight: { justifyContent: "flex-end" },
-  
+
   messageBubble: {
     maxWidth: "80%",
     padding: 14,
@@ -308,8 +402,13 @@ const styles = StyleSheet.create({
     borderBottomLeftRadius: 4,
   },
   messageText: { color: "#FFFFFF", fontSize: 15, lineHeight: 22 },
-  aiLabel: { color: "#A78BFA", fontSize: 12, fontWeight: "700", marginBottom: 6 },
-  
+  aiLabel: {
+    color: "#A78BFA",
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 6,
+  },
+
   actionButton: {
     marginTop: 12,
     backgroundColor: "rgba(167, 139, 250, 0.15)",
@@ -325,7 +424,7 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
   },
-  
+
   typingBubble: { paddingVertical: 10, paddingHorizontal: 14 },
   typingText: { color: "#A1A1AA", fontSize: 14, fontStyle: "italic" },
 
@@ -337,7 +436,12 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#4ADE80",
   },
-  attachedInvoiceHeader: { color: "#4ADE80", fontSize: 13, fontWeight: "600", marginBottom: 4 },
+  attachedInvoiceHeader: {
+    color: "#4ADE80",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 4,
+  },
   attachedInvoiceDetails: { color: "#E4E4E7", fontSize: 12, lineHeight: 16 },
 
   inputContainer: {
@@ -348,7 +452,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#000000",
     borderTopWidth: 1,
     borderTopColor: "#262626",
-    marginBottom: Platform.OS === 'ios' ? 8 : 0,
+    marginBottom: Platform.OS === "ios" ? 8 : 0,
   },
   textInput: {
     flex: 1,
@@ -379,7 +483,32 @@ const styles = StyleSheet.create({
     borderColor: "#059669",
   },
   attachBtnIcon: { color: "#FFFFFF", fontSize: 20 },
-  
+
+  statusBadge: {
+    backgroundColor: "rgba(34, 197, 94, 0.15)",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderTopWidth: 1,
+    borderTopColor: "rgba(34, 197, 94, 0.2)",
+  },
+  statusBadgeText: {
+    color: "#4ADE80",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  trashBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 8,
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
+  },
+  trashBtnIcon: { fontSize: 18 },
+
   sendBtn: {
     width: 44,
     height: 44,
@@ -423,7 +552,7 @@ const styles = StyleSheet.create({
   drawerTitle: { color: "#FFFFFF", fontSize: 18, fontWeight: "600" },
   closeDrawerBtn: { padding: 4 },
   closeDrawerText: { color: "#A1A1AA", fontSize: 18 },
-  
+
   newChatBtn: {
     margin: 16,
     paddingVertical: 12,
@@ -436,7 +565,14 @@ const styles = StyleSheet.create({
   newChatBtnText: { color: "#60A5FA", fontSize: 16, fontWeight: "600" },
 
   historyList: { flex: 1, paddingHorizontal: 16 },
-  historySection: { color: "#A1A1AA", fontSize: 12, fontWeight: "600", marginTop: 16, marginBottom: 8, textTransform: "uppercase" },
+  historySection: {
+    color: "#A1A1AA",
+    fontSize: 12,
+    fontWeight: "600",
+    marginTop: 16,
+    marginBottom: 8,
+    textTransform: "uppercase",
+  },
   historyItem: {
     paddingVertical: 12,
     borderBottomWidth: 1,
