@@ -144,7 +144,7 @@ export default function Index() {
         <View style={styles.dashboardContainer}>
           <View style={styles.dashboardHeader}>
             <Text style={styles.dashboardTitle}>
-              Tax<Text style={styles.titleAccent}>AI</Text>
+              Safe<Text style={styles.titleAccent}>Taxes</Text>
             </Text>
             <Text style={styles.subtitle}>Hybrid Tax Settlements</Text>
           </View>
