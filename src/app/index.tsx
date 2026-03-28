@@ -6,11 +6,11 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   ScrollView,
-  FlatList,
+
   Alert,
-  SafeAreaView,
   Pressable,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
 import { File, Directory, Paths } from "expo-file-system";
 import { useOCR, OCR_ENGLISH } from "react-native-executorch";

@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from "react";
-import { View, Text, StyleSheet, SafeAreaView, Animated, Easing } from "react-native";
+import { View, Text, StyleSheet, Animated, Easing } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 
 export default function Processing() {
