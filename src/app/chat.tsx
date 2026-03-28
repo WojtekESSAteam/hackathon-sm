@@ -140,9 +140,6 @@ export default function Chat() {
     };
 
     setAttachedInvoices([invoiceToAttach]);
-    if (!input) {
-      setInput(`Please analyze the invoice${invoiceName ? ` ${invoiceName}` : ""}.`);
-    }
   }, [invoiceData, invoiceName, invoiceId, availableInvoices]);
 
   const drawerTranslation = useSharedValue(-DRAWER_WIDTH);

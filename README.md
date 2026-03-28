@@ -1,4 +1,4 @@
-# Hybrid Intelligence - SafeTaxes
+# Hybrid Intelligence - ExecuTax
 
 ## How to Run the Project Locally
 

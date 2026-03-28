@@ -586,7 +586,7 @@ export default function Index() {
         <View style={styles.header}>
           <View>
             <Text style={styles.dashboardTitle}>
-              Safe<Text style={styles.titleAccent}>Taxes</Text>
+              Execu<Text style={styles.titleAccent}>Tax</Text>
             </Text>
             <Text style={styles.subtitle}>Hybrid tax settlements</Text>
           </View>
