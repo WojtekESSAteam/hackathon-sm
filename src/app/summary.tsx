@@ -68,7 +68,7 @@ export default function Summary() {
           <View style={styles.resultContainer}>
             <View style={styles.successHeader}>
               <Text style={styles.successEmoji}>🎉</Text>
-              <Text style={styles.successTitle}>Rozliczenie Gotowe!</Text>
+              <Text style={styles.successTitle}>Rozliczenie gotowe!</Text>
             </View>
             
             <View style={styles.resultGrid}>
