@@ -1,18 +1,18 @@
+import { File, Paths } from "expo-file-system";
 import { useLocalSearchParams, useRouter } from "expo-router";
-import { useRef, useState, useEffect } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Dimensions,
   Keyboard,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
   TextInput,
-  View,
-  Modal,
-  TouchableOpacity,
+  View
 } from "react-native";
 import Animated, {
   Easing,
@@ -24,7 +24,6 @@ import {
   SafeAreaView,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
-import { File, Directory, Paths } from "expo-file-system";
 
 interface InvoiceField {
   label: string;
@@ -343,33 +342,51 @@ export default function Chat() {
 
         {/* Custom Attachment Cards Above Input */}
         {attachedInvoices.length > 0 && (
-          <ScrollView 
-            horizontal 
-            showsHorizontalScrollIndicator={false} 
-            style={{ maxHeight: 70, marginBottom: 8, marginHorizontal: 16 }}
-            contentContainerStyle={{ alignItems: 'center' }}
+          <View 
+            style={{ 
+              flexDirection: "row", 
+              flexWrap: "wrap", 
+              marginHorizontal: 16, 
+              marginBottom: 8,
+              gap: 8 
+            }}
           >
             {attachedInvoices.map((inv) => (
-              <View key={inv.id} style={[styles.attachmentPreviewContainer, { marginHorizontal: 4, marginBottom: 0, padding: 8, paddingRight: 12 }]}>
-                <View style={[styles.attachmentPreviewIcon, { width: 32, height: 32, marginRight: 8 }]}>
-                  <Text style={[styles.attachmentPreviewIconText, { fontSize: 16 }]}>📄</Text>
+              <View 
+                key={inv.id} 
+                style={[
+                  styles.attachmentPreviewContainer, 
+                  { 
+                    marginHorizontal: 0, 
+                    marginBottom: 0, 
+                    paddingVertical: 6, 
+                    paddingHorizontal: 10, 
+                    borderRadius: 20,
+                    maxWidth: "100%",
+                    alignSelf: "flex-start",
+                  }
+                ]}
+              >
+                <View style={[styles.attachmentPreviewIcon, { width: 24, height: 24, marginRight: 6, borderRadius: 6 }]}>
+                  <Text style={[styles.attachmentPreviewIconText, { fontSize: 12 }]}>📄</Text>
                 </View>
-                <View style={styles.attachmentPreviewTextContainer}>
-                  <Text style={[styles.attachmentPreviewTitle, { fontSize: 12 }]} numberOfLines={1}>
+                <View style={[styles.attachmentPreviewTextContainer, { flexShrink: 1 }]}>
+                  <Text style={[styles.attachmentPreviewTitle, { fontSize: 13, marginBottom: 0, lineHeight: 18 }]} numberOfLines={2}>
                     {inv.name}
                   </Text>
                 </View>
                 <Pressable
-                  style={[styles.attachmentPreviewRemove, { width: 24, height: 24, marginLeft: 8 }]}
+                  style={[styles.attachmentPreviewRemove, { width: 20, height: 20, marginLeft: 8 }]}
                   onPress={() => {
                     setAttachedInvoices(prev => prev.filter(i => i.id !== inv.id));
                   }}
+                  hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                 >
-                  <Text style={[styles.attachmentPreviewRemoveText, { fontSize: 12 }]}>✕</Text>
+                  <Text style={[styles.attachmentPreviewRemoveText, { fontSize: 10 }]}>✕</Text>
                 </Pressable>
               </View>
             ))}
-          </ScrollView>
+          </View>
         )}
 
         {/* Input Bar */}
