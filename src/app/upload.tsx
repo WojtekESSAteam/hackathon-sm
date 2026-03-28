@@ -1,33 +1,100 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { View, Text, StyleSheet, Pressable, ScrollView, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
+import { File, Directory, Paths } from "expo-file-system";
+
+interface InvoiceField {
+  label: string;
+  value: string;
+}
+
+interface InvoiceSummary {
+  fields: InvoiceField[];
+  rawOcr: string;
+  status: "pending" | "processing" | "done" | "error";
+  error?: string;
+}
+
+interface Invoice {
+  id: string;
+  name: string;
+  uri: string;
+  addedAt: number;
+  size?: number;
+  summary?: InvoiceSummary;
+}
+
+const invoicesDir = new Directory(Paths.document, "invoices");
+const invoicesIndexFile = new File(Paths.document, "invoices_index.json");
+
+async function ensureInvoicesDir() {
+  if (!invoicesDir.exists) {
+    invoicesDir.create();
+  }
+}
+
+async function loadIndex(): Promise<Invoice[]> {
+  try {
+    if (!invoicesIndexFile.exists) return [];
+    const raw = await invoicesIndexFile.text();
+    return JSON.parse(raw);
+  } catch {
+    return [];
+  }
+}
+
+async function saveIndex(invoices: Invoice[]) {
+  invoicesIndexFile.write(JSON.stringify(invoices));
+}
 
 export default function Upload() {
-  const [files, setFiles] = useState<{ id: string; name: string; size: string }[]>([]);
+  const [invoices, setInvoices] = useState<Invoice[]>([]);
+  const [picking, setPicking] = useState(false);
   const router = useRouter();
 
+  useEffect(() => {
+    ensureInvoicesDir();
+    loadIndex().then(setInvoices);
+  }, []);
+
   const handleUpload = async () => {
+    setPicking(true);
     try {
       const result = await DocumentPicker.getDocumentAsync({
-        type: "application/pdf",
+        type: ["application/pdf", "image/png", "image/jpeg"],
         copyToCacheDirectory: true,
       });
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const pickedFile = result.assets[0];
-        const sizeInMb = pickedFile.size ? (pickedFile.size / (1024 * 1024)).toFixed(1) + " MB" : "Nieznany rozmiar";
+        ensureInvoicesDir();
+        const current = await loadIndex();
         
-        setFiles((prev) => [
-          ...prev,
-          { id: Date.now().toString(), name: pickedFile.name, size: sizeInMb },
-        ]);
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const ext = pickedFile.name.split(".").pop() || "pdf";
+        const dest = new File(invoicesDir, `${id}.${ext}`);
+        const src = new File(pickedFile.uri);
+        src.copy(dest);
+
+        const newInvoice: Invoice = {
+          id,
+          name: pickedFile.name,
+          uri: dest.uri,
+          addedAt: Date.now(),
+          size: pickedFile.size ?? undefined,
+        };
+        
+        const updated = [...current, newInvoice];
+        saveIndex(updated);
+        setInvoices(updated);
       }
-    } catch (err) {
-      Alert.alert("Błąd", "Wystąpił problem podczas wybierania pliku.");
-      console.error("DocumentPicker error: ", err);
+    } catch (err: any) {
+      Alert.alert("Error", err.message ?? "Failed to pick documents");
+    } finally {
+      setPicking(false);
     }
   };
 
@@ -46,14 +113,25 @@ export default function Upload() {
 
       if (!result.canceled && result.assets && result.assets.length > 0) {
         const photo = result.assets[0];
-        const sizeInMb = photo.fileSize 
-          ? (photo.fileSize / (1024 * 1024)).toFixed(1) + " MB" 
-          : "0.5 MB";
+        ensureInvoicesDir();
+        const current = await loadIndex();
         
-        setFiles((prev) => [
-          ...prev,
-          { id: Date.now().toString(), name: `Scan_${prev.length + 1}.jpg`, size: sizeInMb },
-        ]);
+        const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+        const dest = new File(invoicesDir, `${id}.jpg`);
+        const src = new File(photo.uri);
+        src.copy(dest);
+
+        const newInvoice: Invoice = {
+          id,
+          name: `Scan_${current.length + 1}.jpg`,
+          uri: dest.uri,
+          addedAt: Date.now(),
+          size: photo.fileSize ?? undefined,
+        };
+        
+        const updated = [...current, newInvoice];
+        saveIndex(updated);
+        setInvoices(updated);
       }
     } catch (err: any) {
       if (err.message && err.message.includes("Camera not available")) {
@@ -72,10 +150,25 @@ export default function Upload() {
                 });
                 if (!libResult.canceled && libResult.assets && libResult.assets.length > 0) {
                   const photo = libResult.assets[0];
-                  setFiles((prev) => [
-                    ...prev,
-                    { id: Date.now().toString(), name: `Gallery_${prev.length + 1}.jpg`, size: "0.5 MB" },
-                  ]);
+                  ensureInvoicesDir();
+                  const current = await loadIndex();
+                  
+                  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+                  const dest = new File(invoicesDir, `${id}.jpg`);
+                  const src = new File(photo.uri);
+                  src.copy(dest);
+
+                  const newInvoice: Invoice = {
+                    id,
+                    name: `Gallery_${current.length + 1}.jpg`,
+                    uri: dest.uri,
+                    addedAt: Date.now(),
+                    size: photo.fileSize ?? undefined,
+                  };
+
+                  const updated = [...current, newInvoice];
+                  saveIndex(updated);
+                  setInvoices(updated);
                 }
               }
             }
@@ -89,10 +182,32 @@ export default function Upload() {
   };
 
   const handleProcess = () => {
-    if (files.length > 0) {
-      // Cast path as any to bypass temporary strict typing error before reload
-      router.push("/processing" as any);
-    }
+    router.replace("/" as any);
+  };
+
+  const confirmRemove = (id: string, name: string) => {
+    Alert.alert("Remove invoice", `Remove "${name}"?`, [
+      { text: "Cancel", style: "cancel" },
+      { text: "Remove", style: "destructive", onPress: async () => {
+        const updated = invoices.filter((inv) => inv.id !== id);
+        const toRemove = invoices.find((inv) => inv.id === id);
+        if (toRemove) {
+          try {
+            const f = new File(toRemove.uri);
+            if (f.exists) f.delete();
+          } catch {}
+        }
+        await saveIndex(updated);
+        setInvoices(updated);
+      }},
+    ]);
+  };
+
+  const formatSize = (bytes?: number) => {
+    if (!bytes) return "";
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
   return (
@@ -107,7 +222,7 @@ export default function Upload() {
         </View>
 
         <ScrollView style={styles.fileList} contentContainerStyle={{ paddingBottom: 24 }}>
-          {files.length === 0 ? (
+          {invoices.length === 0 ? (
             <View style={styles.emptyState}>
               <View style={styles.emptyIconPlaceholder}>
                 <Text style={styles.emptyIconText}>📄</Text>
@@ -115,16 +230,30 @@ export default function Upload() {
               <Text style={styles.emptyStateText}>No attached files</Text>
             </View>
           ) : (
-            files.map((file) => (
-              <View key={file.id} style={styles.fileCard}>
+            invoices.map((inv) => (
+              <Pressable 
+                key={inv.id} 
+                style={styles.fileCard}
+                onLongPress={() => confirmRemove(inv.id, inv.name)}
+              >
                 <View style={styles.fileInfo}>
-                  <Text style={styles.fileName}>{file.name}</Text>
-                  <Text style={styles.fileSize}>{file.size}</Text>
+                  <Text style={styles.fileName} numberOfLines={1}>{inv.name}</Text>
+                  <Text style={styles.fileSize}>
+                    {new Date(inv.addedAt).toLocaleDateString()} {inv.size ? `• ${formatSize(inv.size)}` : ""}
+                  </Text>
                 </View>
-                <View style={styles.fileStatus}>
-                  <Text style={styles.statusText}>Ready</Text>
+                <View style={[
+                  styles.fileStatus,
+                  inv.summary?.status === "done" && styles.fileStatusScanned
+                ]}>
+                  <Text style={[
+                    styles.statusText,
+                    inv.summary?.status === "done" && styles.statusTextScanned
+                  ]}>
+                    {inv.summary?.status === "done" ? "Scanned" : "Ready"}
+                  </Text>
                 </View>
-              </View>
+              </Pressable>
             ))
           )}
         </ScrollView>
@@ -140,12 +269,11 @@ export default function Upload() {
           </View>
 
           <Pressable
-            style={[styles.processButton, files.length === 0 && styles.processButtonDisabled]}
-            disabled={files.length === 0}
+            style={styles.processButton}
             onPress={handleProcess}
           >
-            <Text style={styles.processButtonText}>Run On-Device AI</Text>
-            <Text style={styles.processSubText}>Local redaction (ExecuTorch)</Text>
+            <Text style={styles.processButtonText}>Back to Dashboard</Text>
+            <Text style={styles.processSubText}>Scan & Analyze from main screen</Text>
           </Pressable>
         </View>
       </View>
@@ -171,7 +299,9 @@ const styles = StyleSheet.create({
   fileName: { color: "#FFFFFF", fontSize: 16, fontWeight: "600", marginBottom: 4 },
   fileSize: { color: "#A1A1AA", fontSize: 13 },
   fileStatus: { backgroundColor: "rgba(139, 92, 246, 0.15)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 8, borderWidth: 1, borderColor: "rgba(139, 92, 246, 0.3)" },
+  fileStatusScanned: { backgroundColor: "rgba(16, 185, 129, 0.15)", borderColor: "rgba(16, 185, 129, 0.3)" },
   statusText: { color: "#A78BFA", fontSize: 12, fontWeight: "600" },
+  statusTextScanned: { color: "#10B981" },
   footer: { paddingTop: 16, paddingBottom: 32 },
   uploadButtonsRow: { flexDirection: "row", marginBottom: 16 },
   flex1: { flex: 1 },
