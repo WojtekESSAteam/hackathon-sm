@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView, Alert } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Alert, Modal, TouchableOpacity } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import * as DocumentPicker from "expo-document-picker";
@@ -60,6 +60,30 @@ export default function Upload() {
     loadIndex().then(setInvoices);
   }, []);
 
+  // Custom popup state (synced with dashboard design)
+  const [popup, setPopup] = useState<{
+    visible: boolean;
+    icon: "success" | "error" | "warning" | "confirm";
+    title: string;
+    message: string;
+    confirmLabel?: string;
+    cancelLabel?: string;
+    onConfirm?: () => void;
+  }>({ visible: false, icon: "success", title: "", message: "" });
+
+  const showPopup = (
+    icon: "success" | "error" | "warning" | "confirm",
+    title: string,
+    message: string,
+    onConfirm?: () => void,
+    confirmLabel?: string,
+    cancelLabel?: string,
+  ) => {
+    setPopup({ visible: true, icon, title, message, onConfirm, confirmLabel, cancelLabel });
+  };
+
+  const closePopup = () => setPopup((p) => ({ ...p, visible: false }));
+
   const handleUpload = async () => {
     setPicking(true);
     try {
@@ -92,7 +116,7 @@ export default function Upload() {
         setInvoices(updated);
       }
     } catch (err: any) {
-      Alert.alert("Error", err.message ?? "Failed to pick documents");
+      showPopup("error", "Error", err.message ?? "Failed to pick documents");
     } finally {
       setPicking(false);
     }
@@ -102,7 +126,7 @@ export default function Upload() {
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== 'granted') {
-        Alert.alert("Brak uprawnień", "Potrzebujemy dostępu do aparatu, aby zeskanować dokument.");
+        showPopup("warning", "Brak uprawnień", "Potrzebujemy dostępu do aparatu, aby zeskanować dokument.");
         return;
       }
 
@@ -136,46 +160,43 @@ export default function Upload() {
     } catch (err: any) {
       if (err.message && err.message.includes("Camera not available")) {
         // Fallback for Simulator
-        Alert.alert(
+        showPopup(
+          "confirm",
           "Aparat niedostępny", 
           "Symulator nie posiada kamery. Czy chcesz wybrać zdjęcie z galerii?",
-          [
-            { text: "Anuluj", style: "cancel" },
-            { 
-              text: "Galeria", 
-              onPress: async () => {
-                const libResult = await ImagePicker.launchImageLibraryAsync({
-                  quality: 0.8,
-                  allowsEditing: true,
-                });
-                if (!libResult.canceled && libResult.assets && libResult.assets.length > 0) {
-                  const photo = libResult.assets[0];
-                  ensureInvoicesDir();
-                  const current = await loadIndex();
-                  
-                  const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-                  const dest = new File(invoicesDir, `${id}.jpg`);
-                  const src = new File(photo.uri);
-                  src.copy(dest);
+          async () => {
+            const libResult = await ImagePicker.launchImageLibraryAsync({
+              quality: 0.8,
+              allowsEditing: true,
+            });
+            if (!libResult.canceled && libResult.assets && libResult.assets.length > 0) {
+              const photo = libResult.assets[0];
+              ensureInvoicesDir();
+              const current = await loadIndex();
+              
+              const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+              const dest = new File(invoicesDir, `${id}.jpg`);
+              const src = new File(photo.uri);
+              src.copy(dest);
 
-                  const newInvoice: Invoice = {
-                    id,
-                    name: `Gallery_${current.length + 1}.jpg`,
-                    uri: dest.uri,
-                    addedAt: Date.now(),
-                    size: photo.fileSize ?? undefined,
-                  };
+              const newInvoice: Invoice = {
+                id,
+                name: `Gallery_${current.length + 1}.jpg`,
+                uri: dest.uri,
+                addedAt: Date.now(),
+                size: photo.fileSize ?? undefined,
+              };
 
-                  const updated = [...current, newInvoice];
-                  saveIndex(updated);
-                  setInvoices(updated);
-                }
-              }
+              const updated = [...current, newInvoice];
+              saveIndex(updated);
+              setInvoices(updated);
             }
-          ]
+          },
+          "Galeria",
+          "Anuluj"
         );
       } else {
-        Alert.alert("Błąd", "Wystąpił problem podczas uruchamiania aparatu.");
+        showPopup("error", "Błąd", "Wystąpił problem podczas uruchamiania aparatu.");
         console.error("Camera error: ", err);
       }
     }
@@ -186,9 +207,11 @@ export default function Upload() {
   };
 
   const confirmRemove = (id: string, name: string) => {
-    Alert.alert("Remove invoice", `Remove "${name}"?`, [
-      { text: "Cancel", style: "cancel" },
-      { text: "Remove", style: "destructive", onPress: async () => {
+    showPopup(
+      "confirm",
+      "Remove invoice",
+      `Remove "${name}"?`,
+      async () => {
         const updated = invoices.filter((inv) => inv.id !== id);
         const toRemove = invoices.find((inv) => inv.id === id);
         if (toRemove) {
@@ -199,8 +222,10 @@ export default function Upload() {
         }
         await saveIndex(updated);
         setInvoices(updated);
-      }},
-    ]);
+      },
+      "Remove",
+      "Cancel"
+    );
   };
 
   const formatSize = (bytes?: number) => {
@@ -214,9 +239,17 @@ export default function Upload() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Pressable onPress={() => router.back()} style={styles.backButton}>
-            <Text style={styles.backButtonText}>← Back</Text>
-          </Pressable>
+          <View style={styles.headerTop}>
+            <Pressable onPress={() => router.back()} style={styles.backButton}>
+              <Text style={styles.backButtonText}>← Back</Text>
+            </Pressable>
+            <TouchableOpacity 
+              style={styles.chatShortcut} 
+              onPress={() => router.push("/chat" as any)}
+            >
+              <Text style={styles.chatShortcutText}>💬 Chat</Text>
+            </TouchableOpacity>
+          </View>
           <Text style={styles.title}>Upload Documents</Text>
           <Text style={styles.subtitle}>Select invoices to settle</Text>
         </View>
@@ -277,16 +310,88 @@ export default function Upload() {
           </Pressable>
         </View>
       </View>
+
+      {/* Custom popup modal (synced with dashboard design) */}
+      <Modal
+        visible={popup.visible}
+        transparent
+        animationType="fade"
+        onRequestClose={closePopup}
+      >
+        <Pressable style={styles.modalOverlay} onPress={closePopup}>
+          <Pressable style={styles.modalCard} onPress={() => {}}>
+            <View style={[
+              styles.modalIconCircle,
+              popup.icon === "success" && { backgroundColor: "rgba(16, 185, 129, 0.15)" },
+              popup.icon === "error" && { backgroundColor: "rgba(239, 68, 68, 0.15)" },
+              popup.icon === "warning" && { backgroundColor: "rgba(245, 158, 11, 0.15)" },
+              popup.icon === "confirm" && { backgroundColor: "rgba(139, 92, 246, 0.15)" },
+            ]}>
+              <Text style={[
+                styles.modalIconText,
+                popup.icon === "success" && { color: "#34D399" },
+                popup.icon === "error" && { color: "#F87171" },
+                popup.icon === "warning" && { color: "#FBBF24" },
+                popup.icon === "confirm" && { color: "#A78BFA" },
+              ]}>
+                {popup.icon === "success" ? "✓" :
+                 popup.icon === "error" ? "✕" :
+                 popup.icon === "warning" ? "!" : "?"}
+              </Text>
+            </View>
+            <Text style={styles.modalTitle}>{popup.title}</Text>
+            <Text style={styles.modalMessage}>{popup.message}</Text>
+            <View style={styles.modalButtons}>
+              {popup.cancelLabel && (
+                <TouchableOpacity
+                  style={[styles.modalBtn, styles.modalBtnSecondary]}
+                  onPress={closePopup}
+                >
+                  <Text style={styles.modalBtnSecondaryText}>{popup.cancelLabel}</Text>
+                </TouchableOpacity>
+              )}
+              <TouchableOpacity
+                style={[
+                  styles.modalBtn,
+                  styles.modalBtnPrimary,
+                  popup.icon === "error" && { backgroundColor: "#EF4444" },
+                  popup.icon === "warning" && { backgroundColor: "#F59E0B" },
+                  popup.icon === "confirm" && { backgroundColor: "#EF4444" },
+                  !popup.cancelLabel && { flex: 1 },
+                ]}
+                onPress={() => {
+                  closePopup();
+                  popup.onConfirm?.();
+                }}
+              >
+                <Text style={styles.modalBtnPrimaryText}>
+                  {popup.confirmLabel || "OK"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
   safeArea: { flex: 1, backgroundColor: "#0A0A0A" },
-  container: { flex: 1, paddingHorizontal: 24, paddingTop: 24 },
+  container: { flex: 1, paddingHorizontal: 24, paddingTop: 16 },
   header: { marginBottom: 32 },
-  backButton: { marginBottom: 16 },
+  headerTop: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
+  backButton: { },
   backButtonText: { color: "#A1A1AA", fontSize: 16, fontWeight: "600" },
+  chatShortcut: { 
+    backgroundColor: "rgba(139, 92, 246, 0.15)", 
+    paddingHorizontal: 16, 
+    paddingVertical: 8, 
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.3)",
+  },
+  chatShortcutText: { color: "#A78BFA", fontSize: 14, fontWeight: "700" },
   title: { fontSize: 32, fontWeight: "800", color: "#FFFFFF" },
   subtitle: { fontSize: 16, color: "#A1A1AA", marginTop: 8 },
   fileList: { flex: 1 },
@@ -312,4 +417,81 @@ const styles = StyleSheet.create({
   processButtonDisabled: { backgroundColor: "#3F3F46", shadowOpacity: 0, elevation: 0 },
   processButtonText: { color: "#FFFFFF", fontSize: 16, fontWeight: "700" },
   processSubText: { color: "#D8B4FE", fontSize: 12, marginTop: 4 },
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 32,
+  },
+  modalCard: {
+    backgroundColor: "#1C1C1E",
+    borderRadius: 24,
+    padding: 28,
+    width: "100%",
+    maxWidth: 340,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#2C2C2E",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.5,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  modalIconCircle: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+  },
+  modalIconText: {
+    fontSize: 28,
+    fontWeight: "800",
+  },
+  modalTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#FFFFFF",
+    marginBottom: 8,
+    textAlign: "center",
+  },
+  modalMessage: {
+    fontSize: 14,
+    color: "#A1A1AA",
+    textAlign: "center",
+    lineHeight: 20,
+    marginBottom: 24,
+  },
+  modalButtons: {
+    flexDirection: "row",
+    gap: 12,
+    width: "100%",
+  },
+  modalBtn: {
+    flex: 1,
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: "center",
+  },
+  modalBtnPrimary: {
+    backgroundColor: "#8B5CF6",
+  },
+  modalBtnPrimaryText: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "700",
+  },
+  modalBtnSecondary: {
+    backgroundColor: "#2C2C2E",
+    borderWidth: 1,
+    borderColor: "#3A3A3C",
+  },
+  modalBtnSecondaryText: {
+    color: "#A1A1AA",
+    fontSize: 15,
+    fontWeight: "600",
+  },
 });
