@@ -10,16 +10,22 @@ export default function Summary() {
 
   const handleGeminiRequest = () => {
     setIsSending(true);
-    // Symulacja requestu do chmury po cenzurze
     setTimeout(() => {
       setIsSending(false);
-      setResult({
-        totalIncome: "45,200 PLN",
-        totalExpenses: "12,150 PLN",
-        taxToPay: "3,966 PLN",
-        formType: "PIT-36",
+      router.push({
+        pathname: "/chat",
+        params: {
+          invoiceData: JSON.stringify({
+            documents: 2,
+            currency: "PLN",
+            total_revenue: 45200.00,
+            total_costs: 12150.00,
+            year: 2025,
+            pii_removed: true
+          }),
+        },
       });
-    }, 3000);
+    }, 500);
   };
 
   return (

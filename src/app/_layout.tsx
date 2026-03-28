@@ -20,6 +20,7 @@ export default function RootLayout() {
         <Stack.Screen name="upload" />
         <Stack.Screen name="processing" />
         <Stack.Screen name="summary" />
+        <Stack.Screen name="chat" />
       </Stack>
     </>
   );
