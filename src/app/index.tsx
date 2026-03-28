@@ -8,10 +8,13 @@ import {
   ScrollView,
   FlatList,
   Alert,
+  SafeAreaView,
+  Pressable,
 } from "react-native";
 import * as DocumentPicker from "expo-document-picker";
 import { File, Directory, Paths } from "expo-file-system";
 import { useOCR, OCR_ENGLISH } from "react-native-executorch";
+import { Link } from "expo-router";
 
 interface Invoice {
   id: string;
@@ -136,105 +139,223 @@ export default function Index() {
         : `Downloading model... ${Math.round(ocr.downloadProgress * 100)}%`;
 
   return (
-    <View style={styles.root}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <Text style={styles.title}>Invoice Scanner</Text>
-
-        {/* OCR status */}
-        <Text style={styles.status}>{statusText}</Text>
-
-        {!started && (
-          <TouchableOpacity style={styles.button} onPress={() => setStarted(true)}>
-            <Text style={styles.buttonText}>Load OCR Model</Text>
-          </TouchableOpacity>
-        )}
-
-        {started && !ocr.isReady && !ocr.error && (
-          <ActivityIndicator size="large" color="#208AEF" />
-        )}
-
-        {ocr.isReady && (
-          <View style={styles.successBadge}>
-            <Text style={styles.successText}>OCR ready</Text>
-          </View>
-        )}
-
-        {/* Add invoices button */}
-        <TouchableOpacity
-          style={[styles.button, styles.addButton]}
-          onPress={pickInvoices}
-          disabled={picking}
-        >
-          {picking ? (
-            <ActivityIndicator color="#fff" />
-          ) : (
-            <Text style={styles.buttonText}>+ Add Invoices</Text>
-          )}
-        </TouchableOpacity>
-
-        {/* Invoice list */}
-        {invoices.length > 0 && (
-          <View style={styles.listSection}>
-            <Text style={styles.listTitle}>
-              Invoices ({invoices.length})
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView style={styles.root} contentContainerStyle={{ paddingBottom: 60 }}>
+        <View style={styles.dashboardContainer}>
+          <View style={styles.dashboardHeader}>
+            <Text style={styles.dashboardTitle}>
+              Tax<Text style={styles.titleAccent}>AI</Text>
             </Text>
-            {invoices.map((inv) => (
-              <TouchableOpacity
-                key={inv.id}
-                style={styles.invoiceRow}
-                onLongPress={() => confirmRemove(inv)}
-              >
-                <View style={styles.pdfIcon}>
-                  <Text style={styles.pdfIconText}>PDF</Text>
-                </View>
-                <View style={styles.invoiceInfo}>
-                  <Text style={styles.invoiceName} numberOfLines={1}>
-                    {inv.name}
-                  </Text>
-                  <Text style={styles.invoiceMeta}>
-                    {new Date(inv.addedAt).toLocaleDateString("pl-PL")}
-                    {inv.size ? `  •  ${formatSize(inv.size)}` : ""}
-                  </Text>
-                </View>
-              </TouchableOpacity>
-            ))}
+            <Text style={styles.subtitle}>Hybrydowe Rozliczenia Podatkowe</Text>
           </View>
-        )}
 
-        {invoices.length === 0 && (
-          <Text style={styles.emptyText}>
-            No invoices added yet. Tap "Add Invoices" to pick PDFs from your device.
-          </Text>
-        )}
+          <View style={styles.content}>
+            <View style={styles.card}>
+              <View style={styles.cardHeader}>
+                <View style={styles.neonDot} />
+                <Text style={styles.cardTitle}>Rok Podatkowy 2025</Text>
+              </View>
+              <Text style={styles.cardDesc}>
+                Twój asystent wykorzysta lokalne modele (Gemma 3 on-device) do
+                ocenzurowania prywatnych danych z faktur, a następnie
+                bezpiecznie powierzy obliczenia chmurze (Gemini API).
+              </Text>
+
+              <Link href="/upload" asChild>
+                <Pressable style={styles.dashboardButton}>
+                  <Text style={styles.dashboardButtonText}>Wgraj Dokumenty (Nowy Ekran)</Text>
+                </Pressable>
+              </Link>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.scannerContainer}>
+          <Text style={styles.scannerTitle}>Moduł skanera (z OCR)</Text>
+
+          {/* OCR status */}
+          <Text style={styles.status}>{statusText}</Text>
+
+          {!started && (
+            <TouchableOpacity
+              style={styles.scannerButton}
+              onPress={() => setStarted(true)}
+            >
+              <Text style={styles.scannerButtonText}>Załaduj model OCR</Text>
+            </TouchableOpacity>
+          )}
+
+          {started && !ocr.isReady && !ocr.error && (
+            <ActivityIndicator size="large" color="#8B5CF6" />
+          )}
+
+          {ocr.isReady && (
+            <View style={styles.successBadge}>
+              <Text style={styles.successText}>Model OCR gotowy</Text>
+            </View>
+          )}
+
+          {/* Add invoices button */}
+          <TouchableOpacity
+            style={[styles.scannerButton, styles.addButton]}
+            onPress={pickInvoices}
+            disabled={picking}
+          >
+            {picking ? (
+              <ActivityIndicator color="#fff" />
+            ) : (
+              <Text style={styles.scannerButtonText}>+ Dodaj Faktury</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Invoice list */}
+          {invoices.length > 0 && (
+            <View style={styles.listSection}>
+              <Text style={styles.listTitle}>Twoje Faktury ({invoices.length})</Text>
+              {invoices.map((inv) => (
+                <TouchableOpacity
+                  key={inv.id}
+                  style={styles.invoiceRow}
+                  onLongPress={() => confirmRemove(inv)}
+                >
+                  <View style={styles.pdfIcon}>
+                    <Text style={styles.pdfIconText}>PDF</Text>
+                  </View>
+                  <View style={styles.invoiceInfo}>
+                    <Text style={styles.invoiceName} numberOfLines={1}>
+                      {inv.name}
+                    </Text>
+                    <Text style={styles.invoiceMeta}>
+                      {new Date(inv.addedAt).toLocaleDateString("pl-PL")}
+                      {inv.size ? `  •  ${formatSize(inv.size)}` : ""}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          {invoices.length === 0 && (
+            <Text style={styles.emptyText}>
+              Nie dodano jeszcze żadnych faktur. Kliknij powyżej aby z OCR zaczytać PDF z urządzenia.
+            </Text>
+          )}
+        </View>
+
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: "#0A0A0A",
+  },
   root: {
     flex: 1,
-    backgroundColor: "#f8f9fa",
+    backgroundColor: "#0A0A0A",
   },
-  container: {
-    alignItems: "center",
+  dashboardContainer: {
+    paddingHorizontal: 24,
+    paddingTop: 40,
+  },
+  dashboardHeader: {
+    marginBottom: 40,
+  },
+  dashboardTitle: {
+    fontSize: 42,
+    fontWeight: "800",
+    color: "#FFFFFF",
+    letterSpacing: -1,
+  },
+  titleAccent: {
+    color: "#8B5CF6", // Purple neon accent for AI
+  },
+  subtitle: {
+    fontSize: 16,
+    color: "#A1A1AA",
+    marginTop: 8,
+    fontWeight: "500",
+  },
+  content: {
+    width: "100%",
+  },
+  card: {
+    backgroundColor: "#171717",
+    borderRadius: 24,
     padding: 24,
-    paddingTop: 60,
+    borderWidth: 1,
+    borderColor: "#262626",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 5,
+    marginBottom: 16,
   },
-  title: {
-    fontSize: 28,
-    fontWeight: "bold",
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  neonDot: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#8B5CF6",
+    marginRight: 10,
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.8,
+    shadowRadius: 4,
+  },
+  cardTitle: {
+    fontSize: 20,
+    fontWeight: "700",
+    color: "#FFFFFF",
+  },
+  cardDesc: {
+    fontSize: 15,
+    color: "#D4D4D8",
+    lineHeight: 22,
+    marginBottom: 24,
+  },
+  dashboardButton: {
+    backgroundColor: "#8B5CF6",
+    borderRadius: 16,
+    paddingVertical: 16,
+    alignItems: "center",
+  },
+  dashboardButtonText: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+
+  /* SCANNER STYLES */
+  scannerContainer: {
+    alignItems: "center",
+    paddingHorizontal: 24,
+    paddingTop: 32,
+    marginTop: 16,
+    borderTopWidth: 1,
+    borderTopColor: "#262626",
+  },
+  scannerTitle: {
+    fontSize: 24,
+    fontWeight: "700",
     marginBottom: 20,
-    color: "#1a1a2e",
+    color: "#FFFFFF",
   },
   status: {
     fontSize: 14,
     marginBottom: 16,
     textAlign: "center",
-    color: "#666",
+    color: "#A1A1AA",
   },
-  button: {
-    backgroundColor: "#208AEF",
+  scannerButton: {
+    backgroundColor: "#3B82F6",
     paddingHorizontal: 32,
     paddingVertical: 14,
     borderRadius: 12,
@@ -243,22 +364,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   addButton: {
-    backgroundColor: "#16a34a",
+    backgroundColor: "#10B981",
     marginTop: 24,
   },
-  buttonText: {
+  scannerButtonText: {
     color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
+    fontSize: 16,
+    fontWeight: "700",
   },
   successBadge: {
-    backgroundColor: "#d4edda",
+    backgroundColor: "rgba(16, 185, 129, 0.15)",
     padding: 12,
     borderRadius: 12,
     marginTop: 4,
+    borderWidth: 1,
+    borderColor: "rgba(16, 185, 129, 0.3)",
   },
   successText: {
-    color: "#155724",
+    color: "#34D399",
     fontSize: 14,
     fontWeight: "600",
   },
@@ -270,32 +393,31 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "700",
     marginBottom: 12,
-    color: "#1a1a2e",
+    color: "#E4E4E7",
   },
   invoiceRow: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fff",
+    backgroundColor: "#171717",
     padding: 14,
-    borderRadius: 10,
-    marginBottom: 8,
-    shadowColor: "#000",
-    shadowOpacity: 0.05,
-    shadowRadius: 4,
-    shadowOffset: { width: 0, height: 2 },
-    elevation: 2,
+    borderRadius: 16,
+    marginBottom: 12,
+    borderWidth: 1,
+    borderColor: "#262626",
   },
   pdfIcon: {
     width: 42,
     height: 42,
     borderRadius: 8,
-    backgroundColor: "#ef4444",
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(239, 68, 68, 0.3)",
     alignItems: "center",
     justifyContent: "center",
-    marginRight: 12,
+    marginRight: 16,
   },
   pdfIconText: {
-    color: "#fff",
+    color: "#F87171",
     fontSize: 12,
     fontWeight: "800",
   },
@@ -305,11 +427,11 @@ const styles = StyleSheet.create({
   invoiceName: {
     fontSize: 15,
     fontWeight: "600",
-    color: "#1a1a2e",
+    color: "#F4F4F5",
   },
   invoiceMeta: {
     fontSize: 12,
-    color: "#888",
+    color: "#A1A1AA",
     marginTop: 2,
   },
   emptyText: {
@@ -318,5 +440,10 @@ const styles = StyleSheet.create({
     color: "#999",
     textAlign: "center",
     lineHeight: 20,
+    backgroundColor: "#171717",
+    padding: 16,
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#262626",
   },
 });
