@@ -9,7 +9,11 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "icon": "./assets/expo.icon",
-      "bundleIdentifier": "com.anonymous.hackathonsm"
+      "bundleIdentifier": "com.anonymous.hackathonsm",
+      "infoPlist": {
+        "NSCameraUsageDescription": "This app uses the camera to scan invoices/documents for tax analysis.",
+        "NSPhotoLibraryUsageDescription": "This app accesses your photos to let you share them with your friends."
+      }
     },
     "android": {
       "adaptiveIcon": {
@@ -35,6 +39,13 @@
             "image": "./assets/images/splash-icon.png",
             "imageWidth": 76
           }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "The app accesses your photos to let you share them with your friends.",
+          "cameraPermission": "The app uses the camera to scan invoices/documents for tax analysis."
         }
       ]
     ],
