@@ -26,7 +26,7 @@ export default function Summary() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
         <View style={styles.header}>
-          <Text style={styles.title}>Podsumowanie Danych</Text>
+          <Text style={styles.title}>Podsumowanie danych</Text>
           <Text style={styles.subtitle}>Pakiet przygotowany bezpiecznie do weryfikacji.</Text>
         </View>
 
@@ -68,7 +68,7 @@ export default function Summary() {
           <View style={styles.resultContainer}>
             <View style={styles.successHeader}>
               <Text style={styles.successEmoji}>🎉</Text>
-              <Text style={styles.successTitle}>Rozliczenie Gotowe (Gemini)</Text>
+              <Text style={styles.successTitle}>Rozliczenie Gotowe!</Text>
             </View>
             
             <View style={styles.resultGrid}>
@@ -88,7 +88,7 @@ export default function Summary() {
             </View>
 
             <Pressable style={styles.primaryBtn} onPress={() => router.push("/")}>
-              <Text style={styles.primaryBtnText}>Zamknij i Zapisz</Text>
+              <Text style={styles.primaryBtnText}>Zamknij</Text>
             </Pressable>
           </View>
         )}
