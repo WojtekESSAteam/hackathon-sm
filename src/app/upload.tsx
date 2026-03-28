@@ -11,7 +11,7 @@ export default function Upload() {
     // Symulacja podnoszenia pliku
     setFiles((prev) => [
       ...prev,
-      { id: Date.now().toString(), name: `Faktura_FV_${prev.length + 1}.pdf`, size: "1.2 MB" },
+      { id: Date.now().toString(), name: `Invoice_${prev.length + 1}.pdf`, size: "1.2 MB" },
     ]);
   };
 
@@ -27,10 +27,10 @@ export default function Upload() {
       <View style={styles.container}>
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} style={styles.backButton}>
-            <Text style={styles.backButtonText}>← Wróć</Text>
+            <Text style={styles.backButtonText}>← Back</Text>
           </Pressable>
-          <Text style={styles.title}>Wgraj Dokumenty</Text>
-          <Text style={styles.subtitle}>Wybierz faktury do rozliczenia</Text>
+          <Text style={styles.title}>Upload Documents</Text>
+          <Text style={styles.subtitle}>Select invoices to settle</Text>
         </View>
 
         <ScrollView style={styles.fileList} contentContainerStyle={{ paddingBottom: 24 }}>
@@ -39,7 +39,7 @@ export default function Upload() {
               <View style={styles.emptyIconPlaceholder}>
                 <Text style={styles.emptyIconText}>📄</Text>
               </View>
-              <Text style={styles.emptyStateText}>Brak załączonych plików</Text>
+              <Text style={styles.emptyStateText}>No attached files</Text>
             </View>
           ) : (
             files.map((file) => (
@@ -49,7 +49,7 @@ export default function Upload() {
                   <Text style={styles.fileSize}>{file.size}</Text>
                 </View>
                 <View style={styles.fileStatus}>
-                  <Text style={styles.statusText}>Gotowy</Text>
+                  <Text style={styles.statusText}>Ready</Text>
                 </View>
               </View>
             ))
@@ -58,7 +58,7 @@ export default function Upload() {
 
         <View style={styles.footer}>
           <Pressable style={styles.uploadButton} onPress={handleUpload}>
-            <Text style={styles.uploadButtonText}>+ Dodaj kolejny PDF</Text>
+            <Text style={styles.uploadButtonText}>+ Add another PDF</Text>
           </Pressable>
 
           <Pressable
@@ -66,8 +66,8 @@ export default function Upload() {
             disabled={files.length === 0}
             onPress={handleProcess}
           >
-            <Text style={styles.processButtonText}>Uruchom On-Device AI</Text>
-            <Text style={styles.processSubText}>Lokalna cenzura (ExecuTorch)</Text>
+            <Text style={styles.processButtonText}>Run On-Device AI</Text>
+            <Text style={styles.processSubText}>Local redaction (ExecuTorch)</Text>
           </Pressable>
         </View>
       </View>

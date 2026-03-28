@@ -5,7 +5,7 @@ import { useRouter } from "expo-router";
 
 export default function Processing() {
   const router = useRouter();
-  const [logs, setLogs] = useState<string[]>(["> Uruchamianie silnika ExecuTorch..."]);
+  const [logs, setLogs] = useState<string[]>(["> Starting ExecuTorch engine..."]);
   const progressAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -17,13 +17,13 @@ export default function Processing() {
     }).start();
 
     const sequence = [
-      { text: "> Ładowanie modelu Gemma 3 2B do pamięci...", delay: 1500 },
-      { text: "> Wczytywanie pierwszej faktury...", delay: 3000 },
-      { text: "> Wykryto NIP: 123-***-**-**", delay: 4500 },
-      { text: "> Wykryto i zamazano Imię/Nazwisko...", delay: 6000 },
-      { text: "> Wykryto konto bankowe: PL**********...", delay: 7500 },
-      { text: "> Konwertowanie danych wyjściowych na format JSON...", delay: 9000 },
-      { text: "> Zakończono lokalne cenzurowanie. Stan: Bezpieczny.", delay: 10500 },
+      { text: "> Loading Gemma 3 2B model to memory...", delay: 1500 },
+      { text: "> Reading first invoice...", delay: 3000 },
+      { text: "> Tax ID detected: 123-***-**-**", delay: 4500 },
+      { text: "> Name detected and redacted...", delay: 6000 },
+      { text: "> Bank account detected: PL**********...", delay: 7500 },
+      { text: "> Converting output data to JSON format...", delay: 9000 },
+      { text: "> Local redaction finished. Status: Safe.", delay: 10500 },
     ];
 
     const timeouts: NodeJS.Timeout[] = [];
@@ -54,8 +54,8 @@ export default function Processing() {
     <SafeAreaView style={styles.safeArea}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Lokalna Ochrona</Text>
-          <Text style={styles.subtitle}>Przetwarzanie On-Device AI</Text>
+          <Text style={styles.title}>Local Protection</Text>
+          <Text style={styles.subtitle}>On-Device AI Processing</Text>
         </View>
 
         <View style={styles.terminalContainer}>
@@ -78,7 +78,7 @@ export default function Processing() {
           <View style={styles.progressBarBackground}>
             <Animated.View style={[styles.progressBarFill, { width: progressWidth }]} />
           </View>
-          <Text style={styles.progressText}>Cenzurowanie danych w toku...</Text>
+          <Text style={styles.progressText}>Redacting data...</Text>
         </View>
       </View>
     </SafeAreaView>

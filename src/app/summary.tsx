@@ -26,15 +26,15 @@ export default function Summary() {
     <SafeAreaView style={styles.safeArea}>
       <ScrollView style={styles.container} contentContainerStyle={{ paddingBottom: 40 }}>
         <View style={styles.header}>
-          <Text style={styles.title}>Podsumowanie danych</Text>
-          <Text style={styles.subtitle}>Pakiet przygotowany bezpiecznie do weryfikacji.</Text>
+          <Text style={styles.title}>Data Summary</Text>
+          <Text style={styles.subtitle}>Package securely prepared for verification.</Text>
         </View>
 
         {!result ? (
           <>
             <View style={styles.card}>
               <View style={styles.cardHeader}>
-                <Text style={styles.cardTitle}>Ocenzurowana Paczka JSON</Text>
+                <Text style={styles.cardTitle}>Redacted JSON Package</Text>
                 <View style={styles.badgeSafe}>
                   <Text style={styles.badgeSafeText}>Safe</Text>
                 </View>
@@ -47,7 +47,7 @@ export default function Summary() {
             </View>
 
             <View style={styles.actionContainer}>
-              <Text style={styles.actionText}>Dane nie zawierają wrażliwych informacji na Twój temat. Możesz je teraz bezpiecznie przesłać do Gemini celem dokładnych wyliczeń.</Text>
+              <Text style={styles.actionText}>The data doesn't contain any sensitive information about you. You can now securely send it to Gemini for precise calculations.</Text>
               <Pressable
                 style={[styles.geminiBtn, isSending && styles.geminiBtnDisabled]}
                 onPress={handleGeminiRequest}
@@ -57,7 +57,7 @@ export default function Summary() {
                   <ActivityIndicator color="#FFFFFF" />
                 ) : (
                   <>
-                    <Text style={styles.geminiBtnText}>Pobierz rozliczenie z Gemini</Text>
+                    <Text style={styles.geminiBtnText}>Get settlement from Gemini</Text>
                     <Text style={styles.geminiSubText}>API Cloud Inference</Text>
                   </>
                 )}
@@ -68,27 +68,27 @@ export default function Summary() {
           <View style={styles.resultContainer}>
             <View style={styles.successHeader}>
               <Text style={styles.successEmoji}>🎉</Text>
-              <Text style={styles.successTitle}>Rozliczenie gotowe!</Text>
+              <Text style={styles.successTitle}>Settlement Ready!</Text>
             </View>
             
             <View style={styles.resultGrid}>
               <View style={styles.resultBox}>
-                <Text style={styles.resultLabel}>Przychód</Text>
+                <Text style={styles.resultLabel}>Income</Text>
                 <Text style={styles.resultValue}>{result.totalIncome}</Text>
               </View>
               <View style={styles.resultBox}>
-                <Text style={styles.resultLabel}>Koszty</Text>
+                <Text style={styles.resultLabel}>Expenses</Text>
                 <Text style={styles.resultValue}>{result.totalExpenses}</Text>
               </View>
             </View>
 
             <View style={[styles.resultBox, styles.highlightBox]}>
-              <Text style={styles.resultLabelHighlight}>Należny podatek</Text>
+              <Text style={styles.resultLabelHighlight}>Tax Due</Text>
               <Text style={styles.resultValueHighlight}>{result.taxToPay}</Text>
             </View>
 
             <Pressable style={styles.primaryBtn} onPress={() => router.push("/")}>
-              <Text style={styles.primaryBtnText}>Zamknij</Text>
+              <Text style={styles.primaryBtnText}>Close</Text>
             </Pressable>
           </View>
         )}

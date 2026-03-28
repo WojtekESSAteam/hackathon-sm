@@ -146,24 +146,24 @@ export default function Index() {
             <Text style={styles.dashboardTitle}>
               Tax<Text style={styles.titleAccent}>AI</Text>
             </Text>
-            <Text style={styles.subtitle}>Hybrydowe Rozliczenia Podatkowe</Text>
+            <Text style={styles.subtitle}>Hybrid Tax Settlements</Text>
           </View>
 
           <View style={styles.content}>
             <View style={styles.card}>
               <View style={styles.cardHeader}>
                 <View style={styles.neonDot} />
-                <Text style={styles.cardTitle}>Rok Podatkowy 2025</Text>
+                <Text style={styles.cardTitle}>Tax Year 2025</Text>
               </View>
               <Text style={styles.cardDesc}>
-                Twój asystent wykorzysta lokalne modele (Gemma 3 on-device) do
-                ocenzurowania prywatnych danych z faktur, a następnie
-                bezpiecznie powierzy obliczenia chmurze (Gemini API).
+                Your assistant will use local models (Gemma 3 on-device) to
+                redact private data from invoices, and then
+                securely delegate calculations to the cloud (Gemini API).
               </Text>
 
               <Link href="/upload" asChild>
                 <Pressable style={styles.dashboardButton}>
-                  <Text style={styles.dashboardButtonText}>Wgraj dokumenty</Text>
+                  <Text style={styles.dashboardButtonText}>Upload Documents</Text>
                 </Pressable>
               </Link>
             </View>
@@ -171,7 +171,7 @@ export default function Index() {
         </View>
 
         <View style={styles.scannerContainer}>
-          <Text style={styles.scannerTitle}>Moduł skanera (z OCR)</Text>
+          <Text style={styles.scannerTitle}>Scanner Module (OCR)</Text>
 
           {/* OCR status */}
           <Text style={styles.status}>{statusText}</Text>
@@ -181,7 +181,7 @@ export default function Index() {
               style={styles.scannerButton}
               onPress={() => setStarted(true)}
             >
-              <Text style={styles.scannerButtonText}>Załaduj model OCR</Text>
+              <Text style={styles.scannerButtonText}>Load OCR Model</Text>
             </TouchableOpacity>
           )}
 
@@ -191,7 +191,7 @@ export default function Index() {
 
           {ocr.isReady && (
             <View style={styles.successBadge}>
-              <Text style={styles.successText}>Model OCR gotowy</Text>
+              <Text style={styles.successText}>OCR Model Ready</Text>
             </View>
           )}
 
@@ -204,14 +204,14 @@ export default function Index() {
             {picking ? (
               <ActivityIndicator color="#fff" />
             ) : (
-              <Text style={styles.scannerButtonText}>+ Dodaj Faktury</Text>
+              <Text style={styles.scannerButtonText}>+ Add Invoices</Text>
             )}
           </TouchableOpacity>
 
           {/* Invoice list */}
           {invoices.length > 0 && (
             <View style={styles.listSection}>
-              <Text style={styles.listTitle}>Twoje Faktury ({invoices.length})</Text>
+              <Text style={styles.listTitle}>Your Invoices ({invoices.length})</Text>
               {invoices.map((inv) => (
                 <TouchableOpacity
                   key={inv.id}
@@ -226,7 +226,7 @@ export default function Index() {
                       {inv.name}
                     </Text>
                     <Text style={styles.invoiceMeta}>
-                      {new Date(inv.addedAt).toLocaleDateString("pl-PL")}
+                      {new Date(inv.addedAt).toLocaleDateString("en-US")}
                       {inv.size ? `  •  ${formatSize(inv.size)}` : ""}
                     </Text>
                   </View>
@@ -237,7 +237,7 @@ export default function Index() {
 
           {invoices.length === 0 && (
             <Text style={styles.emptyText}>
-              Nie dodano jeszcze żadnych faktur. Kliknij powyżej aby z OCR zaczytać PDF z urządzenia.
+              No invoices added yet. Tap above to scan PDF using OCR.
             </Text>
           )}
         </View>
