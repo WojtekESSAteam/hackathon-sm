@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import * as DocumentPicker from "expo-document-picker";
+import * as ImagePicker from "expo-image-picker";
 import { File, Directory, Paths } from "expo-file-system";
 import { useOCR, OCR_POLISH } from "react-native-executorch";
 import { Link } from "expo-router";
@@ -154,7 +155,6 @@ function maskSensitive(text: string): string {
 }
 
 export default function Index() {
-  const [started, setStarted] = useState(false);
   const [invoices, setInvoices] = useState<Invoice[]>([]);
   const [picking, setPicking] = useState(false);
   const [scanning, setScanning] = useState(false);
@@ -187,8 +187,8 @@ export default function Index() {
 
   const closePopup = () => setPopup((p) => ({ ...p, visible: false }));
 
-  // OCR for text extraction from images (Polish)
-  const ocr = useOCR({ model: OCR_POLISH, preventLoad: !started });
+  // OCR for text extraction from images (Polish) — loads automatically
+  const ocr = useOCR({ model: OCR_POLISH });
 
   useEffect(() => {
     ensureInvoicesDir();
@@ -237,6 +237,85 @@ export default function Index() {
       setPicking(false);
     }
   }, []);
+
+  const scanWithCamera = useCallback(async () => {
+    setPicking(true);
+    try {
+      const perm = await ImagePicker.requestCameraPermissionsAsync();
+      if (!perm.granted) {
+        showPopup("warning", "Permission needed", "Camera access is required to scan invoices.");
+        return;
+      }
+
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        quality: 0.9,
+        allowsEditing: true,
+      });
+
+      if (result.canceled || !result.assets?.length) return;
+
+      ensureInvoicesDir();
+      const asset = result.assets[0];
+      const id = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const dest = new File(invoicesDir, `${id}.jpg`);
+      const src = new File(asset.uri);
+      src.copy(dest);
+
+      const current = await loadIndex();
+      const newInv: Invoice = {
+        id,
+        name: `Scan_${new Date().toISOString().slice(0, 10)}_${id.slice(-4)}.jpg`,
+        uri: dest.uri,
+        addedAt: Date.now(),
+        size: asset.fileSize ?? undefined,
+      };
+
+      const updated = [...current, newInv];
+      saveIndex(updated);
+      setInvoices(updated);
+
+      // Auto-run OCR on the scanned invoice
+      if (ocr.isReady) {
+        const withProcessing = updated.map((inv) =>
+          inv.id === id
+            ? { ...inv, summary: { fields: [], rawOcr: "", status: "processing" as const } }
+            : inv
+        );
+        setInvoices([...withProcessing]);
+
+        try {
+          const ocrResult = await ocr.forward(dest.uri);
+          const sorted = [...ocrResult].sort((a, b) => {
+            const ay = Math.min(...a.bbox.map((p) => p.y));
+            const by = Math.min(...b.bbox.map((p) => p.y));
+            if (Math.abs(ay - by) < 15) {
+              return Math.min(...a.bbox.map((p) => p.x)) - Math.min(...b.bbox.map((p) => p.x));
+            }
+            return ay - by;
+          });
+          const rawOcrText = sorted.map((d) => d.text).join(" ");
+          const fields = rawOcrText.trim() ? extractInvoiceFields(rawOcrText) : [{ label: "Status", value: "Nie wykryto tekstu" }];
+
+          const final = withProcessing.map((inv) =>
+            inv.id === id ? { ...inv, summary: { fields, rawOcr: rawOcrText, status: "done" as const } } : inv
+          );
+          setInvoices([...final]);
+          saveIndex([...final]);
+        } catch {
+          const errState = withProcessing.map((inv) =>
+            inv.id === id ? { ...inv, summary: { fields: [], rawOcr: "", status: "error" as const, error: "OCR failed" } } : inv
+          );
+          setInvoices([...errState]);
+          saveIndex([...errState]);
+        }
+      }
+    } catch (err: any) {
+      showPopup("error", "Error", err.message ?? "Camera failed");
+    } finally {
+      setPicking(false);
+    }
+  }, [ocr]);
 
   const removeInvoice = useCallback(
     async (id: string) => {
@@ -493,90 +572,54 @@ export default function Index() {
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   };
 
-  const statusText = !started
-    ? "Tap below to load OCR model"
-    : ocr.error
-      ? `Error: ${ocr.error.message}`
-      : ocr.isReady
-        ? "OCR loaded and ready!"
-        : `Downloading OCR model... ${Math.round(ocr.downloadProgress * 100)}%`;
+  const statusText = ocr.error
+    ? `Error: ${ocr.error.message}`
+    : ocr.isReady
+      ? "Ready"
+      : `Downloading model... ${Math.round(ocr.downloadProgress * 100)}%`;
 
   return (
     <SafeAreaView style={styles.safeArea}>
-      <ScrollView style={styles.root} contentContainerStyle={{ paddingBottom: 60 }}>
-        <View style={styles.dashboardContainer}>
-          <View style={styles.dashboardHeader}>
+      <ScrollView style={styles.root} contentContainerStyle={{ paddingBottom: 120 }}>
+        {/* Header */}
+        <View style={styles.header}>
+          <View>
             <Text style={styles.dashboardTitle}>
               Safe<Text style={styles.titleAccent}>Taxes</Text>
             </Text>
             <Text style={styles.subtitle}>Hybrid tax settlements</Text>
           </View>
-
-          <View style={styles.content}>
-            <View style={styles.card}>
-              <View style={styles.cardHeader}>
-                <View style={styles.neonDot} />
-                <Text style={styles.cardTitle}>Tax Year 2025</Text>
+          <Link href="/upload" asChild>
+            <Pressable style={styles.chatBtn}>
+              <View style={styles.chatIcon}>
+                <View style={styles.chatBubble} />
+                <View style={styles.chatBubbleTail} />
               </View>
-              <Text style={styles.cardDesc}>
-                Your assistant uses on-device OCR to read invoices and
-                extract key data — all processed locally, offline, and private.
-              </Text>
-
-              <Link href="/upload" asChild>
-                <Pressable style={styles.dashboardButton}>
-                  <Text style={styles.dashboardButtonText}>Upload Documents</Text>
-                </Pressable>
-              </Link>
-            </View>
-          </View>
+            </Pressable>
+          </Link>
         </View>
 
+        {/* Scanner section */}
         <View style={styles.scannerContainer}>
-          <Text style={styles.scannerTitle}>Invoice Scanner</Text>
-
-          <Text style={styles.status}>{statusText}</Text>
-
-          {!started && (
-            <TouchableOpacity
-              style={styles.scannerButton}
-              onPress={() => setStarted(true)}
-            >
-              <Text style={styles.scannerButtonText}>Load OCR Model</Text>
-            </TouchableOpacity>
-          )}
-
-          {started && !ocr.isReady && !ocr.error && (
-            <ActivityIndicator size="large" color="#8B5CF6" />
-          )}
-
-          {ocr.isReady && (
-            <View style={styles.successBadge}>
-              <Text style={styles.successText}>OCR Model Ready</Text>
+          <View style={styles.scannerHeader}>
+            <Text style={styles.scannerTitle}>Invoices</Text>
+            <View style={[
+              styles.statusPill,
+              ocr.isReady && styles.statusPillReady,
+              ocr.error && styles.statusPillError,
+            ]}>
+              {!ocr.isReady && !ocr.error && (
+                <ActivityIndicator size="small" color="#8B5CF6" style={{ marginRight: 6 }} />
+              )}
+              <Text style={[
+                styles.statusPillText,
+                ocr.isReady && styles.statusPillTextReady,
+                ocr.error && styles.statusPillTextError,
+              ]}>
+                {statusText}
+              </Text>
             </View>
-          )}
-
-          {/* Add invoices button */}
-          <TouchableOpacity
-            style={[styles.scannerButton, styles.addButton]}
-            onPress={pickInvoices}
-            disabled={picking}
-          >
-            {picking ? (
-              <ActivityIndicator color="#fff" />
-            ) : (
-              <Text style={styles.scannerButtonText}>+ Add Invoices</Text>
-            )}
-          </TouchableOpacity>
-
-          {/* KSeF sync button */}
-          <TouchableOpacity
-            style={[styles.scannerButton, styles.ksefButton]}
-            onPress={syncFromKsef}
-            disabled={ksefSyncing || scanning}
-          >
-            <Text style={styles.scannerButtonText}>Download from KSeF</Text>
-          </TouchableOpacity>
+          </View>
 
           {/* KSeF progress overlay */}
           {ksefSyncing && (
@@ -590,28 +633,9 @@ export default function Index() {
             </View>
           )}
 
-          {/* Scan & Mask button */}
-          {invoices.length > 0 && ocr.isReady && (
-            <TouchableOpacity
-              style={[styles.scannerButton, styles.maskButton]}
-              onPress={scanAndMask}
-              disabled={scanning}
-            >
-              {scanning ? (
-                <View style={styles.scanningRow}>
-                  <ActivityIndicator color="#fff" size="small" />
-                  <Text style={styles.scannerButtonText}>  Scanning...</Text>
-                </View>
-              ) : (
-                <Text style={styles.scannerButtonText}>Scan & Mask Invoices</Text>
-              )}
-            </TouchableOpacity>
-          )}
-
           {/* Invoice list */}
           {invoices.length > 0 && (
             <View style={styles.listSection}>
-              <Text style={styles.listTitle}>Your Invoices ({invoices.length})</Text>
               {invoices.map((inv) => (
                 <View key={inv.id}>
                   <TouchableOpacity
@@ -663,18 +687,15 @@ export default function Index() {
                     )}
                   </TouchableOpacity>
 
-                  {/* Expanded: structured fields */}
                   {expandedId === inv.id && inv.summary?.status === "done" && (
                     <View style={styles.summaryBox}>
                       <Text style={styles.summaryTitle}>Invoice Data (Masked)</Text>
-
                       {inv.summary.fields.map((field, i) => (
                         <View key={i} style={styles.fieldRow}>
                           <Text style={styles.fieldLabel}>{field.label}</Text>
                           <Text style={styles.fieldValue}>{field.value}</Text>
                         </View>
                       ))}
-
                     </View>
                   )}
 
@@ -690,11 +711,63 @@ export default function Index() {
 
           {invoices.length === 0 && (
             <Text style={styles.emptyText}>
-              No invoices added yet. Tap above to add invoice images.
+              No invoices yet. Add invoices or sync from KSeF.
             </Text>
           )}
         </View>
       </ScrollView>
+
+      {/* Bottom action bar */}
+      <View style={styles.bottomBar}>
+        <TouchableOpacity
+          style={[styles.bottomSideIcon, styles.bottomSideIconKsef]}
+          onPress={syncFromKsef}
+          disabled={ksefSyncing || scanning}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.ksefArrow}>↓</Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.bottomSideIcon, styles.bottomSideIconCamera]}
+          onPress={scanWithCamera}
+          disabled={picking}
+          activeOpacity={0.7}
+        >
+          <View style={styles.cameraIcon}>
+            <View style={styles.cameraBody} />
+            <View style={styles.cameraLens} />
+          </View>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.bottomCenterBtn}
+          onPress={pickInvoices}
+          disabled={picking}
+          activeOpacity={0.8}
+        >
+          {picking ? (
+            <ActivityIndicator color="#fff" />
+          ) : (
+            <Text style={styles.bottomCenterIcon}>+</Text>
+          )}
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={[styles.bottomSideIcon, styles.bottomSideIconMask]}
+          onPress={scanAndMask}
+          disabled={scanning || !ocr.isReady || invoices.length === 0}
+          activeOpacity={0.7}
+        >
+          {scanning ? (
+            <ActivityIndicator color="#A78BFA" size="small" />
+          ) : (
+            <View style={styles.maskIconOuter}>
+              <View style={styles.maskIconInner} />
+            </View>
+          )}
+        </TouchableOpacity>
+      </View>
 
       {/* Custom popup modal */}
       <Modal
@@ -770,15 +843,16 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#0A0A0A",
   },
-  dashboardContainer: {
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     paddingHorizontal: 24,
-    paddingTop: 40,
-  },
-  dashboardHeader: {
-    marginBottom: 40,
+    paddingTop: 16,
+    paddingBottom: 8,
   },
   dashboardTitle: {
-    fontSize: 42,
+    fontSize: 32,
     fontWeight: "800",
     color: "#FFFFFF",
     letterSpacing: -1,
@@ -787,125 +861,187 @@ const styles = StyleSheet.create({
     color: "#8B5CF6",
   },
   subtitle: {
-    fontSize: 16,
+    fontSize: 14,
     color: "#A1A1AA",
-    marginTop: 8,
+    marginTop: 2,
     fontWeight: "500",
   },
-  content: {
-    width: "100%",
-  },
-  card: {
-    backgroundColor: "#171717",
-    borderRadius: 24,
-    padding: 24,
+  chatBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#1C1C1E",
+    alignItems: "center",
+    justifyContent: "center",
     borderWidth: 1,
-    borderColor: "#262626",
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 5,
-    marginBottom: 16,
+    borderColor: "rgba(139, 92, 246, 0.3)",
   },
-  cardHeader: {
-    flexDirection: "row",
+  chatIcon: {
+    width: 22,
+    height: 18,
     alignItems: "center",
-    marginBottom: 16,
+    justifyContent: "center",
   },
-  neonDot: {
-    width: 8,
-    height: 8,
-    borderRadius: 4,
+  chatBubble: {
+    width: 20,
+    height: 14,
+    borderRadius: 7,
     backgroundColor: "#8B5CF6",
-    marginRight: 10,
-    shadowColor: "#8B5CF6",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 4,
   },
-  cardTitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    color: "#FFFFFF",
-  },
-  cardDesc: {
-    fontSize: 15,
-    color: "#D4D4D8",
-    lineHeight: 22,
-    marginBottom: 24,
-  },
-  dashboardButton: {
-    backgroundColor: "#8B5CF6",
-    borderRadius: 16,
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  dashboardButtonText: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "700",
+  chatBubbleTail: {
+    position: "absolute",
+    bottom: -2,
+    right: 2,
+    width: 0,
+    height: 0,
+    borderLeftWidth: 5,
+    borderBottomWidth: 5,
+    borderLeftColor: "transparent",
+    borderBottomColor: "#8B5CF6",
+    transform: [{ rotate: "20deg" }],
   },
   scannerContainer: {
-    alignItems: "center",
     paddingHorizontal: 24,
-    paddingTop: 32,
-    marginTop: 16,
-    borderTopWidth: 1,
-    borderTopColor: "#262626",
+    paddingTop: 20,
+  },
+  scannerHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    width: "100%",
+    marginBottom: 20,
   },
   scannerTitle: {
     fontSize: 24,
     fontWeight: "700",
-    marginBottom: 20,
     color: "#FFFFFF",
   },
-  status: {
-    fontSize: 14,
-    marginBottom: 16,
-    textAlign: "center",
-    color: "#A1A1AA",
-  },
-  scannerButton: {
-    backgroundColor: "#3B82F6",
-    paddingHorizontal: 32,
-    paddingVertical: 14,
-    borderRadius: 12,
-    marginBottom: 12,
-    minWidth: 200,
+  statusPill: {
+    flexDirection: "row",
     alignItems: "center",
-  },
-  addButton: {
-    backgroundColor: "#10B981",
-    marginTop: 24,
-  },
-  scannerButtonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "700",
-  },
-  successBadge: {
-    backgroundColor: "rgba(16, 185, 129, 0.15)",
-    padding: 12,
-    borderRadius: 12,
-    marginTop: 4,
+    backgroundColor: "rgba(139, 92, 246, 0.1)",
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
     borderWidth: 1,
+    borderColor: "rgba(139, 92, 246, 0.2)",
+  },
+  statusPillReady: {
+    backgroundColor: "rgba(16, 185, 129, 0.1)",
     borderColor: "rgba(16, 185, 129, 0.3)",
   },
-  successText: {
-    color: "#34D399",
-    fontSize: 14,
+  statusPillError: {
+    backgroundColor: "rgba(239, 68, 68, 0.1)",
+    borderColor: "rgba(239, 68, 68, 0.3)",
+  },
+  statusPillText: {
+    fontSize: 12,
     fontWeight: "600",
+    color: "#A78BFA",
+  },
+  statusPillTextReady: {
+    color: "#34D399",
+  },
+  statusPillTextError: {
+    color: "#F87171",
+  },
+  bottomBar: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 32,
+    paddingBottom: 28,
+    paddingTop: 10,
+    backgroundColor: "rgba(10, 10, 10, 0.95)",
+    borderTopWidth: 1,
+    borderTopColor: "#1C1C1E",
+  },
+  bottomSideIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "#171717",
+    borderWidth: 1,
+    borderColor: "#2C2C2E",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  bottomSideIconKsef: {
+    borderColor: "rgba(245, 158, 11, 0.25)",
+  },
+  bottomSideIconCamera: {
+    borderColor: "rgba(16, 185, 129, 0.25)",
+  },
+  cameraIcon: {
+    width: 22,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  cameraBody: {
+    width: 20,
+    height: 14,
+    borderRadius: 3,
+    borderWidth: 2,
+    borderColor: "#34D399",
+  },
+  cameraLens: {
+    position: "absolute",
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: "#34D399",
+  },
+  bottomSideIconMask: {
+    borderColor: "rgba(139, 92, 246, 0.25)",
+  },
+  ksefArrow: {
+    fontSize: 20,
+    color: "#F59E0B",
+    fontWeight: "700",
+  },
+  maskIconOuter: {
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    borderWidth: 2,
+    borderColor: "#A78BFA",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  maskIconInner: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#A78BFA",
+  },
+  bottomCenterBtn: {
+    width: 56,
+    height: 56,
+    borderRadius: 28,
+    backgroundColor: "#8B5CF6",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  bottomCenterIcon: {
+    fontSize: 28,
+    fontWeight: "500",
+    color: "#FFFFFF",
+    marginTop: -1,
   },
   listSection: {
     width: "100%",
-    marginTop: 24,
-  },
-  listTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    marginBottom: 12,
-    color: "#E4E4E7",
+    marginTop: 16,
   },
   invoiceRow: {
     flexDirection: "row",
@@ -945,15 +1081,6 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#A1A1AA",
     marginTop: 2,
-  },
-  maskButton: {
-    backgroundColor: "#8B5CF6",
-    marginTop: 24,
-    marginBottom: 8,
-  },
-  scanningRow: {
-    flexDirection: "row",
-    alignItems: "center",
   },
   invoiceRowScanned: {
     borderColor: "rgba(139, 92, 246, 0.3)",
@@ -1036,10 +1163,6 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     borderWidth: 1,
     borderColor: "#262626",
-  },
-  ksefButton: {
-    backgroundColor: "#F59E0B",
-    marginTop: 12,
   },
   ksefProgressBox: {
     width: "100%",
