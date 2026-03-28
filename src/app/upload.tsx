@@ -1,18 +1,33 @@
 import { useState } from "react";
-import { View, Text, StyleSheet, Pressable, ScrollView } from "react-native";
+import { View, Text, StyleSheet, Pressable, ScrollView, Alert } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import * as DocumentPicker from "expo-document-picker";
 
 export default function Upload() {
   const [files, setFiles] = useState<{ id: string; name: string; size: string }[]>([]);
   const router = useRouter();
 
-  const handleUpload = () => {
-    // Symulacja podnoszenia pliku
-    setFiles((prev) => [
-      ...prev,
-      { id: Date.now().toString(), name: `Invoice_${prev.length + 1}.pdf`, size: "1.2 MB" },
-    ]);
+  const handleUpload = async () => {
+    try {
+      const result = await DocumentPicker.getDocumentAsync({
+        type: "application/pdf",
+        copyToCacheDirectory: true,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const pickedFile = result.assets[0];
+        const sizeInMb = pickedFile.size ? (pickedFile.size / (1024 * 1024)).toFixed(1) + " MB" : "Nieznany rozmiar";
+        
+        setFiles((prev) => [
+          ...prev,
+          { id: Date.now().toString(), name: pickedFile.name, size: sizeInMb },
+        ]);
+      }
+    } catch (err) {
+      Alert.alert("Błąd", "Wystąpił problem podczas wybierania pliku.");
+      console.error("DocumentPicker error: ", err);
+    }
   };
 
   const handleProcess = () => {
