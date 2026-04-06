@@ -1,6 +1,6 @@
 # Hybrid Intelligence - ExecuTax
 
-## Software Mansion Hackathon 2026
+## Software Mansion x Gemini Hackathon 2026
 
 This repository contains the ExecuTax project, a hybrid intelligence solution built for the hackathon.
 
